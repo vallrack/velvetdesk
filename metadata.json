@@ -1,0 +1,6 @@
+{
+  "name": "VelvetDesk Omnichannel Creator Suite",
+  "description": "Plataforma omnicanal para creadoras de contenido: bandeja unificada (Fansly, Telegram, ManyVids, WhatsApp, Pornhub, Scatbook, VIPweb), bot IA/reglas con intervención humana, bóveda multimedia, CRM de fans y pasarelas de pago.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
