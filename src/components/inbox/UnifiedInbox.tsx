@@ -48,6 +48,7 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
   const [activeChatId, setActiveChatId] = useState<string>(threads[0]?.id || '');
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformId | 'all'>('all');
   const [isFanDrawerOpen, setIsFanDrawerOpen] = useState(false);
+  const [isMobileViewingChat, setIsMobileViewingChat] = useState(false);
 
   // Modals state
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
@@ -57,6 +58,11 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
   const activeChat = threads.find((t) => t.id === activeChatId) || threads[0];
   const activeMessages = activeChat ? messagesMap[activeChat.id] || [] : [];
   const activeFan = activeChat ? fans.find((f) => f.id === activeChat.fanId) : undefined;
+
+  const handleSelectChat = (id: string) => {
+    setActiveChatId(id);
+    setIsMobileViewingChat(true);
+  };
 
   const handleSendFromConversation = (text: string, media?: any) => {
     if (!activeChat) return;
@@ -108,7 +114,6 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
         }
       : undefined;
 
-    // Send confirmation in chat
     onSendMessage(
       activeChat.id,
       `⏱️ [ENVÍO PROGRAMADO PARA ${data.date} a las ${data.time}]: ${data.text}`,
@@ -117,48 +122,54 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
   };
 
   return (
-    <div className="flex-1 flex h-full overflow-hidden">
-      {/* Col 1: Threads List */}
+    <div className="flex-1 flex h-full overflow-hidden relative">
+      {/* Col 1: Threads List (hidden on mobile when viewing chat) */}
       <ChatList
         threads={threads}
         activeChatId={activeChat?.id || null}
-        onSelectChat={(id) => {
-          setActiveChatId(id);
-        }}
+        onSelectChat={handleSelectChat}
         selectedPlatform={selectedPlatform}
         onSelectPlatform={setSelectedPlatform}
+        isMobileViewingChat={isMobileViewingChat}
       />
 
-      {/* Col 2: Chat Conversation Canvas */}
-      {activeChat ? (
-        <ChatConversation
-          chat={activeChat}
-          messages={activeMessages}
-          fanProfile={activeFan}
-          vaultItems={vaultItems}
-          persona={persona}
-          rules={rules}
-          gateways={gateways}
-          onSendMessage={handleSendFromConversation}
-          onToggleAttendedBy={(mode) => onToggleAttendedBy(activeChat.id, mode)}
-          onOpenVaultModal={() => setIsVaultModalOpen(true)}
-          onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
-          onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
-          onToggleFanDrawer={() => setIsFanDrawerOpen(!isFanDrawerOpen)}
-          onUnlockPpv={(messageId, title, price) =>
-            onUnlockPpv(activeChat.id, messageId, title, price)
-          }
-          onConfirmPaymentAndRelease={(messageId, amount) =>
-            onConfirmPaymentAndRelease(activeChat.id, messageId, amount)
-          }
-        />
-      ) : (
-        <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
-          Selecciona una conversación para comenzar
-        </div>
-      )}
+      {/* Col 2: Chat Conversation Canvas (hidden on mobile when NOT viewing chat) */}
+      <div
+        className={`${
+          isMobileViewingChat ? 'flex w-full' : 'hidden md:flex'
+        } flex-1 h-full overflow-hidden`}
+      >
+        {activeChat ? (
+          <ChatConversation
+            chat={activeChat}
+            messages={activeMessages}
+            fanProfile={activeFan}
+            vaultItems={vaultItems}
+            persona={persona}
+            rules={rules}
+            gateways={gateways}
+            onSendMessage={handleSendFromConversation}
+            onToggleAttendedBy={(mode) => onToggleAttendedBy(activeChat.id, mode)}
+            onOpenVaultModal={() => setIsVaultModalOpen(true)}
+            onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
+            onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
+            onToggleFanDrawer={() => setIsFanDrawerOpen(!isFanDrawerOpen)}
+            onUnlockPpv={(messageId, title, price) =>
+              onUnlockPpv(activeChat.id, messageId, title, price)
+            }
+            onConfirmPaymentAndRelease={(messageId, amount) =>
+              onConfirmPaymentAndRelease(activeChat.id, messageId, amount)
+            }
+            onBackToList={() => setIsMobileViewingChat(false)}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+            Selecciona una conversación para comenzar
+          </div>
+        )}
+      </div>
 
-      {/* Col 3: Fan CRM Sidebar Drawer */}
+      {/* Col 3: Fan CRM Sidebar Drawer (slide-over on mobile) */}
       {activeFan && (
         <FanProfileSidebar
           fan={activeFan}

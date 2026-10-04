@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, MainView } from './components/layout/Sidebar';
+import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { UnifiedInbox } from './components/inbox/UnifiedInbox';
 import { BotEngineView } from './components/bot/BotEngineView';
 import { VaultView } from './components/vault/VaultView';
@@ -48,6 +49,7 @@ export default function App() {
   const [gateways, setGateways] = useState<PaymentGatewayConfig[]>(INITIAL_PAYMENT_GATEWAYS);
   const [isGlobalBotActive, setIsGlobalBotActive] = useState<boolean>(true);
   const [isSimulateModalOpen, setIsSimulateModalOpen] = useState<boolean>(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const totalUnread = threads.reduce((acc, t) => acc + t.unreadCount, 0);
   const todayRevenue = channels.reduce((acc, c) => acc + c.todayRevenue, 0);
@@ -406,6 +408,29 @@ export default function App() {
     setVaultItems((prev) => prev.filter((v) => v.id !== id));
   };
 
+  const handleUpdateChannelCredentials = (
+    channelId: PlatformId,
+    credentials: {
+      credentialInfo: string;
+      accountUsername?: string;
+      status: 'connected' | 'disconnected';
+    }
+  ) => {
+    setChannels((prev) =>
+      prev.map((c) =>
+        c.id === channelId
+          ? {
+              ...c,
+              credentialInfo: credentials.credentialInfo,
+              accountUsername: credentials.accountUsername,
+              status: credentials.status,
+              lastSyncTime: 'En tiempo real',
+            }
+          : c
+      )
+    );
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans selection:bg-pink-500/30 selection:text-pink-200">
       {/* Top Navbar */}
@@ -414,6 +439,7 @@ export default function App() {
         isGlobalBotActive={isGlobalBotActive}
         onToggleGlobalBot={() => setIsGlobalBotActive(!isGlobalBotActive)}
         onOpenSimulateModal={() => setIsSimulateModalOpen(true)}
+        onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
         todayTotalRevenue={todayRevenue}
         unreadCount={totalUnread}
       />
@@ -426,6 +452,8 @@ export default function App() {
           onSelectView={setCurrentView}
           unreadCount={totalUnread}
           channelsCount={channels.length}
+          isMobileOpen={isMobileMenuOpen}
+          onCloseMobile={() => setIsMobileMenuOpen(false)}
         />
 
         {/* Dynamic Views */}
@@ -503,6 +531,7 @@ export default function App() {
           {currentView === 'channels' && (
             <ChannelsView
               channels={channels}
+              onUpdateChannelCredentials={handleUpdateChannelCredentials}
               onRefreshChannel={(id) => {
                 setChannels((prev) =>
                   prev.map((c) =>
@@ -521,6 +550,14 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (Phone & Tablet) */}
+      <MobileBottomNav
+        currentView={currentView}
+        onSelectView={setCurrentView}
+        onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+        unreadCount={totalUnread}
+      />
 
       {/* Simulate Incoming Message Modal */}
       <SimulateIncomingModal

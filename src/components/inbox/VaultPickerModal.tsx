@@ -36,16 +36,16 @@ export const VaultPickerModal: React.FC<VaultPickerModalProps> = ({
   const alreadyPurchasedIds = new Set(fanProfile?.purchasedItems.map((p) => p.vaultItemId) || []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-3 sm:p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] sm:max-h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-800 shrink-0">
           <div>
-            <h3 className="font-semibold text-white flex items-center gap-2">
+            <h3 className="font-semibold text-white text-sm sm:text-base flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-pink-400" />
               Bóveda de Contenido Multimedia
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-[10px] sm:text-xs text-slate-400">
               Selecciona un archivo para enviar a {fanProfile?.name || 'este chat'}
             </p>
           </div>
@@ -58,8 +58,8 @@ export const VaultPickerModal: React.FC<VaultPickerModalProps> = ({
         </div>
 
         {/* Options Bar */}
-        <div className="px-6 py-3 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4 text-xs">
+        <div className="px-4 sm:px-6 py-2.5 sm:py-3 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-3 sm:gap-4 text-xs flex-wrap">
             <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300">
               <input
                 type="checkbox"
@@ -67,8 +67,8 @@ export const VaultPickerModal: React.FC<VaultPickerModalProps> = ({
                 onChange={(e) => setIsPpvMode(e.target.checked)}
                 className="w-4 h-4 rounded text-pink-600 focus:ring-0 bg-slate-900 border-slate-700"
               />
-              <span className="flex items-center gap-1 font-medium">
-                <Lock className="w-3.5 h-3.5 text-pink-400" /> Bloquear como PPV (De pago)
+              <span className="flex items-center gap-1 font-medium text-[11px] sm:text-xs">
+                <Lock className="w-3.5 h-3.5 text-pink-400" /> Bloquear como PPV
               </span>
             </label>
 
@@ -80,14 +80,14 @@ export const VaultPickerModal: React.FC<VaultPickerModalProps> = ({
                   onChange={(e) => setIsViewOnce(e.target.checked)}
                   className="w-4 h-4 rounded text-emerald-600 focus:ring-0 bg-slate-900 border-slate-700"
                 />
-                <span className="flex items-center gap-1 font-medium">
-                  <Eye className="w-3.5 h-3.5" /> Enviar como Foto Efímera (1 sola vista)
+                <span className="flex items-center gap-1 font-medium text-[11px] sm:text-xs">
+                  <Eye className="w-3.5 h-3.5" /> Foto Efímera
                 </span>
               </label>
             )}
           </div>
 
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <div className="relative w-full sm:w-auto sm:flex-1 sm:min-w-[180px] sm:max-w-xs">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
             <input
               type="text"
@@ -100,7 +100,7 @@ export const VaultPickerModal: React.FC<VaultPickerModalProps> = ({
         </div>
 
         {/* Tags */}
-        <div className="px-6 py-2 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto">
+        <div className="px-4 sm:px-6 py-2 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto shrink-0 scrollbar-none">
           {allTags.map((tag) => (
             <button
               key={tag}

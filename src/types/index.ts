@@ -157,4 +157,9 @@ export interface ChannelIntegration {
   latencyMs: number;
   lastSyncTime: string;
   credentialInfo: string;
+  authMethod?: 'qr_code' | 'api_token' | 'session_cookie' | 'credentials';
+  accountUsername?: string;
+  webhookUrl?: string;
+  apiKeyOrToken?: string;
+  sessionCookie?: string;
 }

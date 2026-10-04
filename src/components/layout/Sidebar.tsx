@@ -7,7 +7,7 @@ import {
   Users,
   BarChart3,
   Radio,
-  Sparkles,
+  X,
 } from 'lucide-react';
 
 export type MainView = 'inbox' | 'bot' | 'vault' | 'payments' | 'crm' | 'analytics' | 'channels';
@@ -17,6 +17,8 @@ interface SidebarProps {
   onSelectView: (view: MainView) => void;
   unreadCount: number;
   channelsCount: number;
+  isMobileOpen: boolean;
+  onCloseMobile: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -24,6 +26,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectView,
   unreadCount,
   channelsCount,
+  isMobileOpen,
+  onCloseMobile,
 }) => {
   const navItems = [
     {
@@ -72,11 +76,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  return (
-    <aside className="w-64 border-r border-slate-800 bg-slate-950 flex flex-col justify-between shrink-0 select-none">
+  const handleItemClick = (view: MainView) => {
+    onSelectView(view);
+    onCloseMobile();
+  };
+
+  const navContent = (
+    <div className="flex flex-col h-full justify-between select-none">
       <div className="p-3 space-y-1.5 overflow-y-auto">
-        <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
-          Módulos Principales
+        <div className="flex items-center justify-between px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+          <span>Módulos Principales</span>
+          <button
+            onClick={onCloseMobile}
+            className="lg:hidden p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {navItems.map((item) => {
@@ -86,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <button
               key={item.id}
-              onClick={() => onSelectView(item.id)}
+              onClick={() => handleItemClick(item.id)}
               className={`w-full px-3.5 py-3 rounded-xl flex items-center justify-between transition-all cursor-pointer group text-left ${
                 isActive
                   ? 'bg-gradient-to-r from-pink-600/20 to-purple-600/10 border border-pink-500/30 text-white font-medium shadow-sm'
@@ -139,6 +154,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:flex w-64 border-r border-slate-800 bg-slate-950 flex-col shrink-0">
+        {navContent}
+      </aside>
+
+      {/* Mobile Drawer Overlay */}
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-50 flex lg:hidden">
+          <div
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
+            onClick={onCloseMobile}
+          />
+          <div className="relative w-72 max-w-[85vw] bg-slate-950 border-r border-slate-800 h-full flex flex-col shadow-2xl z-10">
+            {navContent}
+          </div>
+        </div>
+      )}
+    </>
   );
 };

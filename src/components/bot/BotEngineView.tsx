@@ -204,26 +204,26 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs overflow-x-auto max-w-full scrollbar-none shrink-0">
             <button
               onClick={() => setActiveTab('persona')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === 'persona' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              🎭 Personalidad & Tono
+              🎭 Personalidad
             </button>
             <button
               onClick={() => setActiveTab('rules')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === 'rules' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              ⚡ Reglas & Disparadores ({rules.length})
+              ⚡ Reglas ({rules.length})
             </button>
             <button
               onClick={() => setActiveTab('faqs')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === 'faqs' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -231,11 +231,11 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('test')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === 'test' ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white' : 'text-pink-400 hover:text-white'
               }`}
             >
-              ✨ Simulador en Vivo
+              ✨ Simulador
             </button>
           </div>
         </div>

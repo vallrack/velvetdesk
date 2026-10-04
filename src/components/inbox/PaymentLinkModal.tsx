@@ -60,17 +60,17 @@ export const PaymentLinkModal: React.FC<PaymentLinkModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-3 sm:p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
               <CreditCard className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-semibold text-white">Enviar Enlace de Pago Seguro</h3>
-              <p className="text-xs text-slate-400">
+              <h3 className="font-semibold text-white text-sm sm:text-base">Enviar Enlace de Pago</h3>
+              <p className="text-[10px] sm:text-xs text-slate-400">
                 Monetización externa para {fanProfile?.name || 'el cliente'} ({fanProfile?.platform.toUpperCase()})
               </p>
             </div>
@@ -83,7 +83,7 @@ export const PaymentLinkModal: React.FC<PaymentLinkModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-4 sm:p-6 space-y-3.5 sm:space-y-4 overflow-y-auto">
           {/* Method selector */}
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">

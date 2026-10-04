@@ -10,6 +10,7 @@ interface ChatListProps {
   onSelectChat: (chatId: string) => void;
   selectedPlatform: PlatformId | 'all';
   onSelectPlatform: (platform: PlatformId | 'all') => void;
+  isMobileViewingChat?: boolean;
 }
 
 export const ChatList: React.FC<ChatListProps> = ({
@@ -18,6 +19,7 @@ export const ChatList: React.FC<ChatListProps> = ({
   onSelectChat,
   selectedPlatform,
   onSelectPlatform,
+  isMobileViewingChat = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [attendedFilter, setAttendedFilter] = useState<'all' | AttendedBy>('all');
@@ -36,7 +38,7 @@ export const ChatList: React.FC<ChatListProps> = ({
   });
 
   const platforms: { id: PlatformId | 'all'; label: string }[] = [
-    { id: 'all', label: 'Todos los canales' },
+    { id: 'all', label: 'Todos' },
     { id: 'fansly', label: 'Fansly' },
     { id: 'telegram', label: 'Telegram' },
     { id: 'manyvids', label: 'ManyVids' },
@@ -47,9 +49,13 @@ export const ChatList: React.FC<ChatListProps> = ({
   ];
 
   return (
-    <div className="w-80 sm:w-96 border-r border-slate-800 bg-slate-950 flex flex-col h-full shrink-0">
+    <div
+      className={`${
+        isMobileViewingChat ? 'hidden md:flex' : 'flex w-full'
+      } md:w-80 lg:w-96 border-r border-slate-800 bg-slate-950 flex-col h-full shrink-0`}
+    >
       {/* Search and Filters Header */}
-      <div className="p-4 border-b border-slate-800 space-y-3">
+      <div className="p-3.5 sm:p-4 border-b border-slate-800 space-y-2.5 sm:space-y-3">
         {/* Search Input */}
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
@@ -130,7 +136,7 @@ export const ChatList: React.FC<ChatListProps> = ({
                   <img
                     src={thread.fanAvatar}
                     alt={thread.fanName}
-                    className="w-11 h-11 rounded-full object-cover border border-slate-800"
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border border-slate-800"
                   />
                   <div className="absolute -bottom-1 -right-1">
                     <PlatformBadge platform={thread.platform} size="sm" showLabel={false} />
@@ -151,7 +157,7 @@ export const ChatList: React.FC<ChatListProps> = ({
                   </div>
 
                   {/* Channel & Attended status */}
-                  <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                     <PlatformBadge platform={thread.platform} size="sm" />
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex items-center gap-1 ${
