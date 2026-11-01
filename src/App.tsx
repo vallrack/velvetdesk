@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { LoginView } from './components/auth/LoginView';
+import { getCurrentUser, onAuthStateChange, logout as authLogout, type AuthUser } from './services/authService';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, MainView } from './components/layout/Sidebar';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
@@ -10,18 +12,10 @@ import { CrmView } from './components/crm/CrmView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import { ChannelsView } from './components/channels/ChannelsView';
 import { SimulateIncomingModal } from './components/inbox/SimulateIncomingModal';
-import {
-  INITIAL_CHANNELS,
-  INITIAL_VAULT,
-  INITIAL_FANS,
-  INITIAL_CHATS,
-  INITIAL_MESSAGES,
-  INITIAL_BOT_PERSONA,
-  INITIAL_BOT_RULES,
-  INITIAL_FAQS,
-  INITIAL_PAYMENT_GATEWAYS,
-} from './mock/initialData';
-import {
+import { supabase } from './lib/supabase';
+import * as api from './services/apiService';
+import { requestBotReply } from './services/geminiService';
+import type {
   ChannelIntegration,
   VaultItem,
   FanProfile,
@@ -34,406 +28,592 @@ import {
   PlatformId,
   FanTier,
 } from './types';
-import { requestBotReply } from './services/geminiService';
+
+// ─── Default empty states (no mock data) ─────────────────────────────────────
+const DEFAULT_PERSONA: BotPersona = {
+  tone: 'coqueta',
+  toneLabel: 'Coqueta, Pícara y Dulce',
+  customSystemPrompt: '',
+  useEmojis: true,
+  humanTypingDelaySeconds: 2,
+  autoUpsellEnabled: true,
+  upsellDiscountPercent: 20,
+  autoPauseOnCreatorReply: true,
+};
 
 export default function App() {
   const [currentView, setCurrentView] = useState<MainView>('inbox');
-  const [channels, setChannels] = useState<ChannelIntegration[]>(INITIAL_CHANNELS);
-  const [vaultItems, setVaultItems] = useState<VaultItem[]>(INITIAL_VAULT);
-  const [fans, setFans] = useState<FanProfile[]>(INITIAL_FANS);
-  const [threads, setThreads] = useState<ChatThread[]>(INITIAL_CHATS);
-  const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(INITIAL_MESSAGES);
-  const [persona, setPersona] = useState<BotPersona>(INITIAL_BOT_PERSONA);
-  const [rules, setRules] = useState<BotRule[]>(INITIAL_BOT_RULES);
-  const [faqs, setFaqs] = useState<FAQItem[]>(INITIAL_FAQS);
-  const [gateways, setGateways] = useState<PaymentGatewayConfig[]>(INITIAL_PAYMENT_GATEWAYS);
+
+  // ─── App state (starts empty, loaded from API) ────────────────────────────
+  const [channels, setChannels] = useState<ChannelIntegration[]>([]);
+  const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
+  const [fans, setFans] = useState<FanProfile[]>([]);
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | undefined>(undefined);
+  const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>({});
+  const [persona, setPersonaState] = useState<BotPersona>(DEFAULT_PERSONA);
+  const [rules, setRulesState] = useState<BotRule[]>([]);
+  const [faqs, setFaqsState] = useState<FAQItem[]>([]);
+  const [gateways, setGatewaysState] = useState<PaymentGatewayConfig[]>([]);
   const [isGlobalBotActive, setIsGlobalBotActive] = useState<boolean>(true);
   const [isSimulateModalOpen, setIsSimulateModalOpen] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
+  // ─── Auth state ───────────────────────────────────────────────────────────
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  const realtimeRef = useRef<{ messagesChannel: any; threadsChannel: any } | null>(null);
+
+  // ─── Web Push Notifications setup ────────────────────────────────────────
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      // Request after a short delay so it doesn't feel abrupt
+      const t = setTimeout(() => Notification.requestPermission(), 4000);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  function sendPushNotification(title: string, body: string, icon?: string) {
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+      try {
+        new Notification(title, {
+          body: body.length > 80 ? body.slice(0, 77) + '…' : body,
+          icon: icon || '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: 'velvetdesk-message',
+          renotify: true,
+        } as any);
+      } catch (e) {
+        console.warn('[Push] Notification failed:', e);
+      }
+    }
+  }
+
+  // ─── Auth bootstrap on mount ─────────────────────────────────────────────
+  useEffect(() => {
+    getCurrentUser().then(user => {
+      setAuthUser(user);
+      setAuthChecked(true);
+    });
+    const { data: { subscription } } = onAuthStateChange(user => {
+      setAuthUser(user);
+      setAuthChecked(true);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ─── Load all data once authenticated ────────────────────────────────────
+  useEffect(() => {
+    if (!authUser) return;
+    loadInitialData();
+    setupRealtimeSubscriptions();
+    return () => teardownRealtimeSubscriptions();
+  }, [authUser?.id]);
+
+  async function loadInitialData() {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const [
+        fetchedChannels,
+        fetchedThreads,
+        fetchedFans,
+        fetchedVault,
+        fetchedPersona,
+        fetchedRules,
+        fetchedFaqs,
+        fetchedGateways,
+      ] = await Promise.all([
+        api.fetchChannels(),
+        api.fetchThreads(),
+        api.fetchFans(),
+        api.fetchVault(),
+        api.fetchBotPersona(),
+        api.fetchBotRules(),
+        api.fetchFaqs(),
+        api.fetchGateways(),
+      ]);
+
+      setChannels(fetchedChannels);
+      setThreads(fetchedThreads);
+      setFans(fetchedFans);
+      setVaultItems(fetchedVault);
+      setPersonaState(fetchedPersona);
+      setRulesState(fetchedRules);
+      setFaqsState(fetchedFaqs);
+      setGatewaysState(fetchedGateways);
+    } catch (err: any) {
+      console.error('[App] Failed to load data:', err);
+      setLoadError(err.message || 'Error al cargar datos. Verifica la conexión con Supabase.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // ─── Message cache timestamps (avoid stale data after server restart) ───────
+  const msgCacheTimestamps = useRef<Record<string, number>>({});
+
+  // ─── Load messages for a specific chat (lazy, with 60s TTL cache) ──────────
+  const loadMessages = useCallback(async (chatId: string) => {
+    const now = Date.now();
+    const lastLoaded = msgCacheTimestamps.current[chatId] || 0;
+    const isFresh = now - lastLoaded < 60_000; // 60 second TTL
+
+    if (messagesMap[chatId] && isFresh) return; // Cache is valid — skip fetch
+    try {
+      const msgs = await api.fetchMessages(chatId);
+      msgCacheTimestamps.current[chatId] = now;
+      setMessagesMap(prev => ({ ...prev, [chatId]: msgs }));
+    } catch (e) {
+      console.error('[App] Failed to load messages for chat', chatId, e);
+    }
+  }, [messagesMap]);
+
+  // ─── Supabase Realtime subscriptions ─────────────────────────────────────
+  function setupRealtimeSubscriptions() {
+    const messagesChannel = supabase
+      .channel('realtime-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = payload.new as any;
+        const newMessage: Message = {
+          id: msg.id,
+          chatId: msg.chat_id,
+          sender: msg.sender,
+          text: msg.text,
+          timestamp: msg.timestamp,
+          media: msg.media || undefined,
+          status: msg.status,
+          paymentDetails: msg.payment_details || undefined,
+        };
+        setMessagesMap(prev => {
+          const existing = prev[msg.chat_id] || [];
+          // Avoid duplicates
+          if (existing.some(m => m.id === msg.id)) return prev;
+          return { ...prev, [msg.chat_id]: [...existing, newMessage] };
+        });
+
+        // 🔔 Web Push Notification when a FAN sends a message and tab is hidden
+        if (msg.sender === 'fan') {
+          setThreads(current => {
+            const t = current.find(th => th.id === msg.chat_id);
+            const fanName = t?.fanName || 'Fan';
+            const avatar = t?.fanAvatar;
+            sendPushNotification(
+              `💬 Nuevo mensaje de ${fanName}`,
+              msg.text || '(media)',
+              avatar,
+            );
+            return current; // no state change, just reading
+          });
+        }
+      })
+      .subscribe();
+
+    const threadsChannel = supabase
+      .channel('realtime-threads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'threads' }, (payload) => {
+        const raw = payload.new as any;
+        if (!raw) return;
+        const updatedThread: ChatThread = {
+          id: raw.id,
+          fanId: raw.fan_id,
+          fanName: raw.fan_name,
+          fanHandle: raw.fan_handle,
+          fanAvatar: raw.fan_avatar,
+          platform: raw.platform as PlatformId,
+          attendedBy: raw.attended_by,
+          botPausedReason: raw.bot_paused_reason,
+          lastMessage: raw.last_message,
+          lastMessageTime: raw.last_message_time,
+          unreadCount: raw.unread_count,
+          fanTier: raw.fan_tier,
+          totalSpent: raw.total_spent,
+          isOnline: raw.is_online,
+        };
+        setThreads(prev => {
+          const idx = prev.findIndex(t => t.id === raw.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = updatedThread;
+            return next;
+          }
+          return [updatedThread, ...prev]; // New thread
+        });
+      })
+      .subscribe();
+
+    realtimeRef.current = { messagesChannel, threadsChannel };
+  }
+
+  function teardownRealtimeSubscriptions() {
+    if (realtimeRef.current) {
+      supabase.removeChannel(realtimeRef.current.messagesChannel);
+      supabase.removeChannel(realtimeRef.current.threadsChannel);
+    }
+  }
+
+  // ─── Computed values ──────────────────────────────────────────────────────
   const totalUnread = threads.reduce((acc, t) => acc + t.unreadCount, 0);
   const todayRevenue = channels.reduce((acc, c) => acc + c.todayRevenue, 0);
 
-  // Send message from creator (RF1.4: automatically pauses bot for this chat)
-  const handleSendMessage = (chatId: string, text: string, media?: any) => {
-    const thread = threads.find((t) => t.id === chatId);
+  // ─── Send message from creator ────────────────────────────────────────────
+  const handleSendMessage = useCallback(async (chatId: string, text: string, media?: any) => {
+    const thread = threads.find(t => t.id === chatId);
     if (!thread) return;
 
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const optimistic: Message = {
+      id: `optimistic-${Date.now()}`,
       chatId,
       sender: 'creator',
       text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp,
       media,
-      status: 'delivered',
+      status: 'sending',
     };
 
-    // Update messages
-    setMessagesMap((prev) => ({
+    // Optimistic update
+    setMessagesMap(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), optimistic] }));
+    setThreads(prev => prev.map(t => t.id === chatId ? {
+      ...t, attendedBy: 'creator',
+      botPausedReason: 'Intervención manual de la creadora',
+      lastMessage: text, lastMessageTime: timestamp, unreadCount: 0,
+    } : t));
+
+    try {
+      const saved = await api.sendMessage(chatId, { sender: 'creator', text, timestamp, media, status: 'delivered' });
+      // Replace optimistic with real
+      setMessagesMap(prev => ({
+        ...prev,
+        [chatId]: (prev[chatId] || []).map(m => m.id === optimistic.id ? { ...saved, chatId } : m),
+      }));
+    } catch (e) {
+      console.error('[App] Send message error:', e);
+      // ❌ Mark the optimistic message as failed so the user sees a visual error
+      setMessagesMap(prev => ({
+        ...prev,
+        [chatId]: (prev[chatId] || []).map(m =>
+          m.id === optimistic.id ? { ...m, status: 'failed' as any } : m
+        ),
+      }));
+    }
+  }, [threads]);
+
+  // ─── Toggle bot/manual mode ───────────────────────────────────────────────
+  const handleToggleAttendedBy = useCallback(async (chatId: string, mode: 'bot' | 'creator') => {
+    setThreads(prev => prev.map(t => t.id === chatId ? {
+      ...t, attendedBy: mode,
+      botPausedReason: mode === 'creator' ? 'Modo manual activado por la creadora' : undefined,
+    } : t));
+    await api.updateThread(chatId, {
+      attendedBy: mode,
+      botPausedReason: mode === 'creator' ? 'Modo manual activado por la creadora' : undefined,
+    }).catch(console.error);
+  }, []);
+
+  // ─── Unlock PPV content ───────────────────────────────────────────────────
+  const handleUnlockPpv = useCallback(async (chatId: string, messageId: string, itemTitle: string, price: number) => {
+    // Optimistic update
+    setMessagesMap(prev => ({
       ...prev,
-      [chatId]: [...(prev[chatId] || []), newMessage],
+      [chatId]: (prev[chatId] || []).map(m =>
+        m.id === messageId && m.media ? { ...m, media: { ...m.media, isUnlocked: true } } : m
+      ),
+    }));
+    setThreads(prev => prev.map(t => t.id === chatId ? { ...t, totalSpent: t.totalSpent + price } : t));
+    setFans(prev => prev.map(f => {
+      const thread = threads.find(t => t.id === chatId);
+      if (!thread || f.id !== thread.fanId) return f;
+      const newTotal = f.totalSpent + price;
+      const newTier: FanTier = newTotal >= 250 ? 'vip' : newTotal >= 50 ? 'recurrente' : 'curioso';
+      return { ...f, totalSpent: newTotal, tier: newTier };
     }));
 
-    // Update thread: switch to creator manual control and pause bot (RF1.4)
-    setThreads((prev) =>
-      prev.map((t) => {
-        if (t.id === chatId) {
-          return {
-            ...t,
-            attendedBy: 'creator',
-            botPausedReason: 'Intervención manual de la creadora hace un momento',
-            lastMessage: text,
-            lastMessageTime: newMessage.timestamp,
-            unreadCount: 0,
-          };
-        }
-        return t;
-      })
-    );
-  };
+    await api.unlockPpv(messageId, chatId, price, itemTitle).catch(console.error);
+  }, [threads]);
 
-  // Toggle attended by state
-  const handleToggleAttendedBy = (chatId: string, mode: 'bot' | 'creator') => {
-    setThreads((prev) =>
-      prev.map((t) => {
-        if (t.id === chatId) {
-          return {
-            ...t,
-            attendedBy: mode,
-            botPausedReason: mode === 'creator' ? 'Modo manual activado por la creadora' : undefined,
-          };
-        }
-        return t;
-      })
-    );
-  };
+  // ─── Confirm external payment and release content ────────────────────────
+  const handleConfirmPaymentAndRelease = useCallback(async (chatId: string, messageId: string, amount: number) => {
+    const unlockedItem = vaultItems.find(v => v.price === amount) || vaultItems[0];
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  // Unlock PPV Content and record purchase
-  const handleUnlockPpv = (chatId: string, messageId: string, itemTitle: string, price: number) => {
-    const thread = threads.find((t) => t.id === chatId);
-    if (!thread) return;
+    // Mark payment confirmed
+    setMessagesMap(prev => ({
+      ...prev,
+      [chatId]: (prev[chatId] || []).map(m =>
+        m.id === messageId && m.paymentDetails
+          ? { ...m, paymentDetails: { ...m.paymentDetails, status: 'confirmed' as const } }
+          : m
+      ),
+    }));
 
-    // Update message state
-    setMessagesMap((prev) => {
-      const chatMsgs = prev[chatId] || [];
-      return {
-        ...prev,
-        [chatId]: chatMsgs.map((m) => {
-          if (m.id === messageId && m.media) {
-            return {
-              ...m,
-              media: { ...m.media, isUnlocked: true },
-            };
-          }
-          return m;
-        }),
-      };
-    });
-
-    // Update fan spending and purchase history
-    setFans((prev) =>
-      prev.map((f) => {
-        if (f.id === thread.fanId) {
-          const newPurchase = {
-            id: `ord-${Date.now()}`,
-            vaultItemId: 'ppv-unlocked',
-            itemTitle,
-            amount: price,
-            date: new Date().toISOString().split('T')[0],
-            platform: thread.platform,
-            paymentMethod: `${thread.platform.toUpperCase()} Saldo/Directo`,
-          };
-          const newTotal = f.totalSpent + price;
-          const newTier: FanTier = newTotal >= 250 ? 'vip' : newTotal >= 50 ? 'recurrente' : 'curioso';
-          return {
-            ...f,
-            totalSpent: newTotal,
-            tier: newTier,
-            purchasedItems: [newPurchase, ...f.purchasedItems],
-          };
-        }
-        return f;
-      })
-    );
-
-    // Update thread spending
-    setThreads((prev) =>
-      prev.map((t) => (t.id === chatId ? { ...t, totalSpent: t.totalSpent + price } : t))
-    );
-
-    // Update channel revenue
-    setChannels((prev) =>
-      prev.map((c) =>
-        c.id === thread.platform ? { ...c, todayRevenue: c.todayRevenue + price } : c
-      )
-    );
-  };
-
-  // Confirm external payment and automatically release content (RF4.2)
-  const handleConfirmPaymentAndRelease = (chatId: string, messageId: string, amount: number) => {
-    const thread = threads.find((t) => t.id === chatId);
-    if (!thread) return;
-
-    // Confirm transaction in message
-    setMessagesMap((prev) => {
-      const chatMsgs = prev[chatId] || [];
-      const updated = chatMsgs.map((m) => {
-        if (m.id === messageId && m.paymentDetails) {
-          return {
-            ...m,
-            paymentDetails: { ...m.paymentDetails, status: 'confirmed' as const },
-          };
-        }
-        return m;
-      });
-
-      // Release content automatically
-      const unlockedItem = vaultItems.find((v) => v.price === amount) || vaultItems[1];
-      const autoReleaseMessage: Message = {
-        id: `msg-release-${Date.now()}`,
+    if (unlockedItem) {
+      const releaseMsg: Message = {
+        id: `release-${Date.now()}`,
         chatId,
         sender: 'bot',
-        text: `✅ ¡Pago de $${amount} USD confirmado exitosamente! Aquí tienes tu contenido desbloqueado de inmediato amor, ¡disfrútalo muchísimo! 💋🔥`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        media: {
-          type: unlockedItem.type,
-          url: unlockedItem.url,
-          title: unlockedItem.title,
-          isPpv: true,
-          ppvPrice: amount,
-          isUnlocked: true,
-        },
+        text: `✅ ¡Pago de $${amount} USD confirmado! Aquí tienes tu contenido desbloqueado amor 💋🔥`,
+        timestamp,
+        media: { type: unlockedItem.type, url: unlockedItem.url, title: unlockedItem.title, isPpv: true, ppvPrice: amount, isUnlocked: true },
         status: 'delivered',
       };
+      setMessagesMap(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), releaseMsg] }));
+      await api.sendMessage(chatId, releaseMsg).catch(console.error);
+    }
 
-      return {
-        ...prev,
-        [chatId]: [...updated, autoReleaseMessage],
-      };
-    });
+    await api.unlockPpv(messageId, chatId, amount, unlockedItem?.title || 'Contenido PPV').catch(console.error);
+  }, [vaultItems]);
 
-    // Update fan LTV and purchase history
-    setFans((prev) =>
-      prev.map((f) => {
-        if (f.id === thread.fanId) {
-          const newPurchase = {
-            id: `ord-ext-${Date.now()}`,
-            vaultItemId: 'ppv-released',
-            itemTitle: `Contenido Liberado ($${amount})`,
-            amount,
-            date: new Date().toISOString().split('T')[0],
-            platform: thread.platform,
-            paymentMethod: 'Crypto / Enlace Externo',
-          };
-          const newTotal = f.totalSpent + amount;
-          return {
-            ...f,
-            totalSpent: newTotal,
-            purchasedItems: [newPurchase, ...f.purchasedItems],
-          };
-        }
-        return f;
-      })
-    );
+  // ─── Update fan profile ───────────────────────────────────────────────────
+  const handleUpdateFan = useCallback(async (updated: FanProfile) => {
+    setFans(prev => prev.map(f => f.id === updated.id ? updated : f));
+    setThreads(prev => prev.map(t => t.fanId === updated.id ? { ...t, fanTier: updated.tier } : t));
+    await api.updateFan(updated.id, updated).catch(console.error);
+  }, []);
 
-    // Update channel revenue
-    setChannels((prev) =>
-      prev.map((c) =>
-        c.id === thread.platform ? { ...c, todayRevenue: c.todayRevenue + amount } : c
-      )
-    );
-  };
+  // ─── Vault operations ─────────────────────────────────────────────────────
+  const handleAddVaultItem = useCallback(async (item: VaultItem) => {
+    setVaultItems(prev => [item, ...prev]);
+    try {
+      const saved = await api.createVaultItem(item);
+      setVaultItems(prev => prev.map(v => v.id === item.id ? { ...saved } : v));
+    } catch (e) {
+      console.error('[App] Add vault item error:', e);
+      setVaultItems(prev => prev.filter(v => v.id !== item.id));
+    }
+  }, []);
 
-  // Simulate Incoming Message from any of the 7 channels
-  const handleSimulateIncoming = async (params: {
+  const handleDeleteVaultItem = useCallback(async (id: string) => {
+    setVaultItems(prev => prev.filter(v => v.id !== id));
+    await api.deleteVaultItem(id).catch(console.error);
+  }, []);
+
+  const handleUpdateVaultItem = useCallback(async (id: string, updates: Partial<VaultItem>) => {
+    setVaultItems(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
+    try {
+      const saved = await api.updateVaultItem(id, updates);
+      setVaultItems(prev => prev.map(v => v.id === id ? { ...v, ...saved } : v));
+    } catch (e) {
+      console.error('[App] Failed to update vault item:', e);
+    }
+  }, []);
+
+  // ─── Channel credentials ──────────────────────────────────────────────────
+  const handleUpdateChannelCredentials = useCallback(async (
+    channelId: PlatformId,
+    credentials: { credentialInfo: string; accountUsername?: string; status: 'connected' | 'disconnected'; apiKeyOrToken?: string; sessionCookie?: string }
+  ) => {
+    setChannels(prev => prev.map(c => c.id === channelId ? {
+      ...c, ...credentials, lastSyncTime: 'Conectando...', updated_at: new Date().toISOString(),
+    } : c));
+    await api.updateChannelCredentials(channelId, credentials).catch(console.error);
+    const updatedChannels = await api.fetchChannels();
+    setChannels(updatedChannels);
+  }, []);
+
+  const handleDisconnectChannel = useCallback(async (channelId: PlatformId) => {
+    try {
+      await api.disconnectChannel(channelId);
+      const updatedChannels = await api.fetchChannels();
+      setChannels(updatedChannels);
+    } catch (e) {
+      console.error('[App] Failed to disconnect channel:', e);
+    }
+  }, []);
+
+  // ─── Bot persona / rules / faqs / gateways (with API save) ───────────────
+  const handleUpdatePersona = useCallback(async (updated: BotPersona) => {
+    setPersonaState(updated);
+    await api.saveBotPersona(updated).catch(console.error);
+  }, []);
+
+  const handleUpdateRules = useCallback(async (updated: BotRule[]) => {
+    setRulesState(updated);
+    await api.saveBotRules(updated).catch(console.error);
+  }, []);
+
+  const handleUpdateFaqs = useCallback(async (updated: FAQItem[]) => {
+    setFaqsState(updated);
+    await api.saveFaqs(updated).catch(console.error);
+  }, []);
+
+  const handleUpdateGateways = useCallback(async (updated: PaymentGatewayConfig[]) => {
+    setGatewaysState(updated);
+    await api.saveGateways(updated).catch(console.error);
+  }, []);
+
+  // ─── Simulate incoming message (for testing/demo) ─────────────────────────
+  const handleSimulateIncoming = useCallback(async (params: {
     platform: PlatformId;
     fanName: string;
     fanTier: FanTier;
     text: string;
     triggerBotReply: boolean;
   }) => {
-    // Find or create thread
-    let existingThread = threads.find(
-      (t) => t.platform === params.platform && t.fanName === params.fanName
-    );
-
+    let existingThread = threads.find(t => t.platform === params.platform && t.fanName === params.fanName);
     let chatId = existingThread?.id;
 
     if (!existingThread) {
       chatId = `chat-sim-${Date.now()}`;
       const newFanId = `fan-sim-${Date.now()}`;
-
       const newFan: FanProfile = {
-        id: newFanId,
-        name: params.fanName,
+        id: newFanId, name: params.fanName,
         handle: `@${params.fanName.toLowerCase().replace(/\s+/g, '_')}`,
-        avatar:
-          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-        platform: params.platform,
-        tier: params.fanTier,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(params.fanName)}&background=8b5cf6&color=fff`,
+        platform: params.platform, tier: params.fanTier,
         totalSpent: params.fanTier === 'vip' ? 300 : params.fanTier === 'recurrente' ? 80 : 0,
-        joinDate: new Date().toISOString().split('T')[0],
-        lastActive: 'En línea',
-        notes: `Nuevo cliente simulado proveniente de ${params.platform.toUpperCase()}.`,
-        tags: [params.platform, params.fanTier],
-        preferences: ['Contenido exclusivo'],
-        purchasedItems: [],
+        joinDate: new Date().toISOString().split('T')[0], lastActive: 'En línea',
+        notes: `Nuevo cliente simulado en ${params.platform.toUpperCase()}.`,
+        tags: [params.platform, params.fanTier], preferences: ['Contenido exclusivo'], purchasedItems: [],
       };
-
       const newThread: ChatThread = {
-        id: chatId,
-        fanId: newFanId,
-        fanName: params.fanName,
-        fanHandle: newFan.handle,
-        fanAvatar: newFan.avatar,
-        platform: params.platform,
-        attendedBy: 'bot',
-        lastMessage: params.text,
-        lastMessageTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        unreadCount: 1,
-        fanTier: params.fanTier,
-        totalSpent: newFan.totalSpent,
-        isOnline: true,
+        id: chatId, fanId: newFanId, fanName: params.fanName,
+        fanHandle: newFan.handle, fanAvatar: newFan.avatar,
+        platform: params.platform, attendedBy: 'bot',
+        lastMessage: params.text, lastMessageTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        unreadCount: 1, fanTier: params.fanTier, totalSpent: newFan.totalSpent, isOnline: true,
       };
-
-      setFans((prev) => [newFan, ...prev]);
-      setThreads((prev) => [newThread, ...prev]);
+      setFans(prev => [newFan, ...prev]);
+      setThreads(prev => [newThread, ...prev]);
       existingThread = newThread;
     } else {
-      // Update existing thread
-      setThreads((prev) =>
-        prev.map((t) =>
-          t.id === chatId
-            ? {
-                ...t,
-                lastMessage: params.text,
-                lastMessageTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                unreadCount: t.unreadCount + 1,
-                isOnline: true,
-              }
-            : t
-        )
-      );
+      setThreads(prev => prev.map(t => t.id === chatId ? {
+        ...t, lastMessage: params.text,
+        lastMessageTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        unreadCount: t.unreadCount + 1, isOnline: true,
+      } : t));
     }
 
     const fanMsg: Message = {
-      id: `msg-${Date.now()}`,
-      chatId: chatId!,
-      sender: 'fan',
-      text: params.text,
+      id: `msg-sim-${Date.now()}`, chatId: chatId!,
+      sender: 'fan', text: params.text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'read',
     };
+    setMessagesMap(prev => ({ ...prev, [chatId!]: [...(prev[chatId!] || []), fanMsg] }));
 
-    setMessagesMap((prev) => ({
-      ...prev,
-      [chatId!]: [...(prev[chatId!] || []), fanMsg],
-    }));
-
-    // Trigger Bot Auto-Reply if enabled & thread attended by bot
     if (params.triggerBotReply && isGlobalBotActive && existingThread.attendedBy === 'bot') {
       setTimeout(async () => {
         try {
           const res = await requestBotReply({
-            fanName: params.fanName,
-            fanTier: params.fanTier,
-            platform: params.platform,
-            persona,
-            rules,
-            messages: [...(messagesMap[chatId!] || []), fanMsg],
-            vaultMenu: vaultItems,
+            fanName: params.fanName, fanTier: params.fanTier, platform: params.platform,
+            persona, rules, messages: [...(messagesMap[chatId!] || []), fanMsg], vaultMenu: vaultItems,
           });
 
-          const botMsg: Message = {
-            id: `msg-bot-${Date.now()}`,
-            chatId: chatId!,
-            sender: 'bot',
-            text: res.reply,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: 'delivered',
-          };
+          // Check if fan asked for voice / audio note
+          const fanTextLower = (params.text || '').toLowerCase();
+          const wantsAudio = fanTextLower.includes('audio') ||
+            fanTextLower.includes('voz') ||
+            fanTextLower.includes('nota de voz') ||
+            fanTextLower.includes('escuchar') ||
+            fanTextLower.includes('habla') ||
+            fanTextLower.includes('mándame un audio') ||
+            fanTextLower.includes('mandame un audio');
 
-          // If suggested PPV
-          if (res.suggestedPpvId) {
-            const ppvItem = vaultItems.find((v) => v.id === res.suggestedPpvId) || vaultItems[0];
-            botMsg.media = {
-              type: ppvItem.type,
-              url: ppvItem.url,
-              title: ppvItem.title,
-              isPpv: true,
-              ppvPrice: ppvItem.price,
-              isUnlocked: false,
-            };
+          let voiceMedia: any = null;
+          if (wantsAudio && res.reply) {
+            try {
+              const ttsRes = await fetch('/api/bot/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: res.reply, gender: 'female' }),
+              });
+              const ttsData = await ttsRes.json();
+              if (ttsData.success && ttsData.audioUrl) {
+                voiceMedia = {
+                  type: 'audio',
+                  url: ttsData.audioUrl,
+                  isVoiceNote: true,
+                  duration: '0:15',
+                };
+              }
+            } catch (err) {
+              console.warn('[Bot Voice] TTS error:', err);
+            }
           }
 
-          setMessagesMap((prev) => ({
-            ...prev,
-            [chatId!]: [...(prev[chatId!] || []), botMsg],
-          }));
-
-          setThreads((prev) =>
-            prev.map((t) =>
-              t.id === chatId
-                ? {
-                    ...t,
-                    lastMessage: botMsg.text,
-                    lastMessageTime: botMsg.timestamp,
-                  }
-                : t
-            )
-          );
-        } catch (e) {
-          console.error(e);
-        }
+          const botMsg: Message = {
+            id: `msg-bot-sim-${Date.now()}`, chatId: chatId!,
+            sender: 'bot',
+            text: voiceMedia ? '' : res.reply,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'delivered',
+            media: voiceMedia || undefined,
+          };
+          if (!voiceMedia && res.suggestedPpvId) {
+            const ppvItem = vaultItems.find(v => v.id === res.suggestedPpvId) || vaultItems[0];
+            if (ppvItem) botMsg.media = { type: ppvItem.type, url: ppvItem.url, title: ppvItem.title, isPpv: true, ppvPrice: ppvItem.price, isUnlocked: false };
+          }
+          setMessagesMap(prev => ({ ...prev, [chatId!]: [...(prev[chatId!] || []), botMsg] }));
+          setThreads(prev => prev.map(t => t.id === chatId ? { ...t, lastMessage: voiceMedia ? '🎤 Nota de voz' : botMsg.text, lastMessageTime: botMsg.timestamp } : t));
+        } catch (e) { console.error('[Simulate] Bot reply error:', e); }
       }, (persona.humanTypingDelaySeconds || 2) * 1000);
     }
 
-    // Switch view to inbox so creator sees the arrival
     setCurrentView('inbox');
-  };
+  }, [threads, messagesMap, vaultItems, isGlobalBotActive, persona, rules]);
 
-  const handleUpdateFan = (updated: FanProfile) => {
-    setFans((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
-    setThreads((prev) =>
-      prev.map((t) => (t.fanId === updated.id ? { ...t, fanTier: updated.tier } : t))
+  // ─── Logout handler ───────────────────────────────────────────────────────
+  const handleLogout = useCallback(async () => {
+    await authLogout();
+    setAuthUser(null);
+    setChannels([]);
+    setThreads([]);
+    setFans([]);
+    setVaultItems([]);
+    setMessagesMap({});
+  }, []);
+
+  // ─── Auth loading / gate ──────────────────────────────────────────────────
+  if (!authChecked) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-100">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-slate-500 text-sm">Verificando sesión...</p>
+        </div>
+      </div>
     );
-  };
+  }
 
-  const handleAddVaultItem = (item: VaultItem) => {
-    setVaultItems((prev) => [item, ...prev]);
-  };
+  if (!authUser) {
+    return <LoginView onAuthSuccess={() => getCurrentUser().then(setAuthUser)} />;
+  }
 
-  const handleDeleteVaultItem = (id: string) => {
-    setVaultItems((prev) => prev.filter((v) => v.id !== id));
-  };
-
-  const handleUpdateChannelCredentials = (
-    channelId: PlatformId,
-    credentials: {
-      credentialInfo: string;
-      accountUsername?: string;
-      status: 'connected' | 'disconnected';
-    }
-  ) => {
-    setChannels((prev) =>
-      prev.map((c) =>
-        c.id === channelId
-          ? {
-              ...c,
-              credentialInfo: credentials.credentialInfo,
-              accountUsername: credentials.accountUsername,
-              status: credentials.status,
-              lastSyncTime: 'En tiempo real',
-            }
-          : c
-      )
+  // ─── Loading screen ───────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-100">
+        <div className="text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-slate-400 text-sm">Cargando VelvetDesk...</p>
+        </div>
+      </div>
     );
-  };
+  }
 
+  if (loadError) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-100 p-8">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="text-4xl">⚠️</div>
+          <h2 className="text-xl font-semibold text-red-400">Error al conectar con la base de datos</h2>
+          <p className="text-slate-400 text-sm">{loadError}</p>
+          <p className="text-slate-500 text-xs">Verifica que <code className="text-pink-400">SUPABASE_URL</code> y <code className="text-pink-400">SUPABASE_SERVICE_ROLE_KEY</code> estén configuradas en tu archivo <code className="text-pink-400">.env</code></p>
+          <button onClick={loadInitialData} className="mt-4 px-4 py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-medium transition-colors">
+            Reintentar conexión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Main app ─────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans selection:bg-pink-500/30 selection:text-pink-200">
-      {/* Top Navbar */}
       <Navbar
         channels={channels}
         isGlobalBotActive={isGlobalBotActive}
@@ -442,11 +622,11 @@ export default function App() {
         onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
         todayTotalRevenue={todayRevenue}
         unreadCount={totalUnread}
+        authUser={authUser}
+        onLogout={handleLogout}
       />
 
-      {/* Main Layout Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar Navigation */}
         <Sidebar
           currentView={currentView}
           onSelectView={setCurrentView}
@@ -456,7 +636,6 @@ export default function App() {
           onCloseMobile={() => setIsMobileMenuOpen(false)}
         />
 
-        {/* Dynamic Views */}
         <main className="flex-1 flex overflow-hidden bg-slate-950">
           {currentView === 'inbox' && (
             <UnifiedInbox
@@ -472,86 +651,71 @@ export default function App() {
               onUpdateFan={handleUpdateFan}
               onUnlockPpv={handleUnlockPpv}
               onConfirmPaymentAndRelease={handleConfirmPaymentAndRelease}
+              onLoadMessages={loadMessages}
+              selectedThreadId={selectedThreadId}
             />
           )}
-
           {currentView === 'bot' && (
             <BotEngineView
               persona={persona}
               rules={rules}
               faqs={faqs}
               vaultItems={vaultItems}
-              onUpdatePersona={setPersona}
-              onUpdateRules={setRules}
-              onUpdateFaqs={setFaqs}
+              onUpdatePersona={handleUpdatePersona}
+              onUpdateRules={handleUpdateRules}
+              onUpdateFaqs={handleUpdateFaqs}
             />
           )}
-
           {currentView === 'vault' && (
             <VaultView
               vaultItems={vaultItems}
               chats={threads}
               onAddVaultItem={handleAddVaultItem}
+              onUpdateVaultItem={handleUpdateVaultItem}
               onDeleteVaultItem={handleDeleteVaultItem}
               onSendToChat={(chatId, item, asPpv) => {
-                const text = asPpv
-                  ? `🔒 Contenido Bloqueado: "${item.title}" ($${item.price} USD)`
-                  : `✨ Aquí tienes: "${item.title}"`;
-                handleSendMessage(chatId, text, {
-                  type: item.type,
-                  url: item.url,
-                  title: item.title,
-                  isPpv: asPpv,
-                  ppvPrice: item.price,
-                  isUnlocked: !asPpv,
-                });
+                const text = asPpv ? `🔒 Contenido Bloqueado: "${item.title}" ($${item.price} USD)` : `✨ Aquí tienes: "${item.title}"`;
+                handleSendMessage(chatId, text, { type: item.type, url: item.url, title: item.title, isPpv: asPpv, ppvPrice: item.price, isUnlocked: !asPpv });
                 setCurrentView('inbox');
               }}
             />
           )}
-
           {currentView === 'payments' && (
-            <PaymentsView
-              gateways={gateways}
-              onUpdateGateways={setGateways}
-            />
+            <PaymentsView gateways={gateways} onUpdateGateways={handleUpdateGateways} />
           )}
-
           {currentView === 'crm' && (
             <CrmView
               fans={fans}
               onUpdateFan={handleUpdateFan}
+              onSelectChatForFan={(fanId) => {
+                const thread = threads.find(
+                  (t) => t.fanId === fanId || t.fanName.toLowerCase() === fans.find((f) => f.id === fanId)?.name.toLowerCase()
+                );
+                if (thread) {
+                  setSelectedThreadId(thread.id);
+                }
+                setCurrentView('inbox');
+              }}
             />
           )}
-
           {currentView === 'analytics' && (
             <AnalyticsView channels={channels} />
           )}
-
           {currentView === 'channels' && (
             <ChannelsView
               channels={channels}
               onUpdateChannelCredentials={handleUpdateChannelCredentials}
-              onRefreshChannel={(id) => {
-                setChannels((prev) =>
-                  prev.map((c) =>
-                    c.id === id
-                      ? {
-                          ...c,
-                          status: 'connected',
-                          lastSyncTime: 'En tiempo real',
-                          latencyMs: Math.floor(Math.random() * 80) + 60,
-                        }
-                      : c
-                  )
-                );
+              onDisconnectChannel={handleDisconnectChannel}
+              onRefreshChannel={async (id) => {
+                await api.refreshChannel(id as PlatformId);
+                const updated = await api.fetchChannels();
+                setChannels(updated);
               }}
             />
           )}
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar (Phone & Tablet) */}
       <MobileBottomNav
         currentView={currentView}
         onSelectView={setCurrentView}
@@ -559,7 +723,6 @@ export default function App() {
         unreadCount={totalUnread}
       />
 
-      {/* Simulate Incoming Message Modal */}
       <SimulateIncomingModal
         isOpen={isSimulateModalOpen}
         onClose={() => setIsSimulateModalOpen(false)}

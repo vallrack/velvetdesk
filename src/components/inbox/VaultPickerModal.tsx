@@ -124,17 +124,35 @@ export const VaultPickerModal: React.FC<VaultPickerModalProps> = ({
             return (
               <div
                 key={item.id}
-                className={`relative bg-slate-950 border rounded-xl overflow-hidden transition-all flex flex-col justify-between group ${
-                  alreadyBought ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 hover:border-pink-500/40'
+                onClick={() => {
+                  if (alreadyBought) {
+                    if (!window.confirm('Este fan ya adquirió este contenido. ¿Estás segura de enviarlo nuevamente?')) return;
+                  }
+                  onSendItem(item, isPpvMode, item.price, isViewOnce);
+                  onClose();
+                }}
+                className={`relative bg-slate-950 border rounded-xl overflow-hidden transition-all flex flex-col justify-between group cursor-pointer ${
+                  alreadyBought ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 hover:border-pink-500/80 hover:shadow-lg hover:shadow-pink-500/20 hover:-translate-y-1'
                 }`}
               >
                 <div>
                   <div className="relative h-32 w-full overflow-hidden bg-slate-900">
-                    <img
-                      src={item.thumbnailUrl}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
+                    {item.type === 'video' ? (
+                      <video
+                        key={item.url}
+                        src={`${item.url}#t=0.5`}
+                        preload="metadata"
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
+                      />
+                    ) : (
+                      <img
+                        src={item.thumbnailUrl}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    )}
                     <div className="absolute top-2 left-2 flex items-center gap-1.5">
                       <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-black/75 text-pink-400 backdrop-blur-sm">
                         {item.type}
@@ -171,26 +189,14 @@ export const VaultPickerModal: React.FC<VaultPickerModalProps> = ({
                       ))}
                     </div>
                   </div>
-                </div>
 
-                <div className="p-3 pt-0 border-t border-slate-900 mt-2 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-500">
-                    {item.fileSize || 'Alta resolución'}
-                  </span>
-                  <button
-                    onClick={() => {
-                      onSendItem(item, isPpvMode, item.price, isViewOnce);
-                      onClose();
-                    }}
-                    className={`text-xs px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-                      isPpvMode
-                        ? 'bg-pink-600 hover:bg-pink-500 text-white shadow-sm'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-                    }`}
-                  >
-                    {isPpvMode ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                    {isPpvMode ? `Enviar PPV ($${item.price})` : 'Enviar Libre'}
-                  </button>
+                  {/* Hover Overlay explicitly showing the action */}
+                  <div className="absolute inset-0 bg-pink-600/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none backdrop-blur-[1px]">
+                    <span className="bg-pink-600 text-white font-bold text-xs px-4 py-2 rounded-full shadow-xl flex items-center gap-2 transform translate-y-4 group-hover:translate-y-0 transition-all">
+                      {isPpvMode ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                      {isPpvMode ? `Enviar como PPV ($${item.price})` : 'Enviar Libre'}
+                    </span>
+                  </div>
                 </div>
               </div>
             );

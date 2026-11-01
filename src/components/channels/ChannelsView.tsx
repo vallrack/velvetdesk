@@ -28,14 +28,18 @@ interface ChannelsViewProps {
       credentialInfo: string;
       accountUsername?: string;
       status: 'connected' | 'disconnected';
+      apiKeyOrToken?: string;
+      sessionCookie?: string;
     }
   ) => void;
+  onDisconnectChannel?: (channelId: PlatformId) => Promise<void>;
 }
 
 export const ChannelsView: React.FC<ChannelsViewProps> = ({
   channels,
   onRefreshChannel,
   onUpdateChannelCredentials,
+  onDisconnectChannel,
 }) => {
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [authModalChannel, setAuthModalChannel] = useState<ChannelIntegration | null>(null);
@@ -78,7 +82,7 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
 
             <div className="hidden md:flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs text-emerald-300 font-semibold">
               <Wifi className="w-4 h-4 text-emerald-400" />
-              <span>7/7 Sincronizados</span>
+              <span>{channels.filter((c) => c.status === 'connected').length}/{channels.length} Sincronizados</span>
             </div>
           </div>
         </div>
@@ -206,6 +210,7 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
             onUpdateChannelCredentials(channelId, creds);
           }
         }}
+        onDisconnectChannel={onDisconnectChannel}
       />
     </div>
   );

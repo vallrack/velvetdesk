@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatList } from './ChatList';
 import { ChatConversation } from './ChatConversation';
 import { FanProfileSidebar } from './FanProfileSidebar';
@@ -29,6 +29,8 @@ interface UnifiedInboxProps {
   onUpdateFan: (updatedFan: FanProfile) => void;
   onUnlockPpv: (chatId: string, messageId: string, itemTitle: string, price: number) => void;
   onConfirmPaymentAndRelease: (chatId: string, messageId: string, amount: number) => void;
+  onLoadMessages?: (chatId: string) => Promise<void>;
+  selectedThreadId?: string;
 }
 
 export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
@@ -44,8 +46,17 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
   onUpdateFan,
   onUnlockPpv,
   onConfirmPaymentAndRelease,
+  onLoadMessages,
+  selectedThreadId,
 }) => {
-  const [activeChatId, setActiveChatId] = useState<string>(threads[0]?.id || '');
+  const [activeChatId, setActiveChatId] = useState<string>(selectedThreadId || threads[0]?.id || '');
+
+  useEffect(() => {
+    if (selectedThreadId) {
+      setActiveChatId(selectedThreadId);
+      setIsMobileViewingChat(true);
+    }
+  }, [selectedThreadId]);
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformId | 'all'>('all');
   const [isFanDrawerOpen, setIsFanDrawerOpen] = useState(false);
   const [isMobileViewingChat, setIsMobileViewingChat] = useState(false);
@@ -62,6 +73,8 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
   const handleSelectChat = (id: string) => {
     setActiveChatId(id);
     setIsMobileViewingChat(true);
+    // Lazily load messages from API if not yet fetched
+    onLoadMessages?.(id);
   };
 
   const handleSendFromConversation = (text: string, media?: any) => {

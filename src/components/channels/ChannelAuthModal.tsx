@@ -20,6 +20,7 @@ import {
   Crown,
   Wifi,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { ChannelIntegration, PlatformId } from '../../types';
 import { PlatformBadge } from '../common/PlatformBadge';
@@ -34,8 +35,11 @@ interface ChannelAuthModalProps {
       credentialInfo: string;
       accountUsername?: string;
       status: 'connected' | 'disconnected';
+      apiKeyOrToken?: string;
+      sessionCookie?: string;
     }
   ) => void;
+  onDisconnectChannel?: (channelId: PlatformId) => Promise<void>;
   allChannels: ChannelIntegration[];
   onSelectChannelToEdit: (ch: ChannelIntegration) => void;
 }
@@ -45,6 +49,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
   onClose,
   channel,
   onSaveCredentials,
+  onDisconnectChannel,
   allChannels,
   onSelectChannelToEdit,
 }) => {
@@ -61,9 +66,11 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [password, setPassword] = useState('');
   const [sessionCookie, setSessionCookie] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   // Status feedback
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [verifiedSuccess, setVerifiedSuccess] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
 
@@ -72,19 +79,57 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
       setActivePlatform(channel.id);
       setUsernameOrEmail(channel.accountUsername || channel.credentialInfo || '');
       setApiToken(channel.apiKeyOrToken || '');
+      setSessionCookie(channel.sessionCookie || '');
     }
   }, [channel]);
 
-  // QR code refresh timer
+  // QR code refresh timer and auto-detection fetch logic
   useEffect(() => {
     let timer: any;
-    if (isOpen && activePlatform === 'whatsapp') {
+    let fetchTimer: any;
+    if (isOpen && activePlatform === 'whatsapp' && activeMethod === 'qr') {
       timer = setInterval(() => {
         setQrCounter((prev) => (prev > 1 ? prev - 1 : 60));
       }, 1000);
+      
+      const fetchQR = async () => {
+        try {
+          const res = await fetch('/api/channels/whatsapp/qr');
+          const data = await res.json();
+
+          // ── Instant connection auto-detection! ──
+          if (data.status === 'connected') {
+            setQrDataUrl(null);
+            setVerifiedSuccess(true);
+            onSaveCredentials('whatsapp', {
+              credentialInfo: data.username ? `+${data.username}` : (waPhone || 'WhatsApp Conectado'),
+              accountUsername: data.username ? `+${data.username}` : undefined,
+              status: 'connected',
+            });
+            setTimeout(() => {
+              setVerifiedSuccess(false);
+              onClose();
+            }, 1800);
+            return;
+          }
+
+          if (data.qr) {
+            setQrDataUrl(data.qr);
+            setQrCounter(60); // Reset countdown on new QR
+          } else {
+            setQrDataUrl(null);
+          }
+        } catch (e) {}
+      };
+      
+      fetchQR();
+      fetchTimer = setInterval(fetchQR, 2500);
     }
-    return () => clearInterval(timer);
-  }, [isOpen, activePlatform]);
+    return () => {
+      clearInterval(timer);
+      clearInterval(fetchTimer);
+    };
+  }, [isOpen, activePlatform, activeMethod]);
 
   if (!isOpen) return null;
 
@@ -100,9 +145,9 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
       if (activePlatform === 'whatsapp') {
         credInfo = waPhone || '+1 (305) 555-0199';
       } else if (activePlatform === 'telegram') {
-        credInfo = usernameOrEmail || '@VelvetGoddess_bot';
+        credInfo = usernameOrEmail || (apiToken ? `Bot: ${apiToken.substring(0, 10)}...` : '@VelvetGoddess_bot');
       } else if (activePlatform === 'fansly') {
-        credInfo = `Token: fan_live_${Math.random().toString(36).substring(2, 7)}...`;
+        credInfo = apiToken ? `Token: ${apiToken.substring(0, 10)}...` : `Token: fan_live_${Math.random().toString(36).substring(2, 7)}...`;
       } else {
         credInfo = usernameOrEmail ? `Usuario: ${usernameOrEmail}` : 'Sesión Activa Sincronizada';
       }
@@ -111,6 +156,8 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
         credentialInfo: credInfo,
         accountUsername: usernameOrEmail || '@velvet_creator',
         status: 'connected',
+        apiKeyOrToken: apiToken || undefined,
+        sessionCookie: sessionCookie || (activePlatform === 'manyvids' || activePlatform === 'pornhub' ? password : undefined),
       });
 
       setTimeout(() => {
@@ -120,14 +167,33 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
     }, 1500);
   };
 
-  const handleDisconnect = () => {
-    onSaveCredentials(activePlatform, {
-      credentialInfo: 'No conectado',
-      accountUsername: '',
-      status: 'disconnected',
-    });
-    onClose();
+  const handleSecurityDisconnect = async () => {
+    if (!window.confirm(`¿Estás seguro de que deseas desvincular y borrar completamente la sesión de ${currentChannel.name}? Esto eliminará los archivos de autenticación del servidor.`)) {
+      return;
+    }
+    setIsDisconnecting(true);
+    try {
+      if (onDisconnectChannel) {
+        await onDisconnectChannel(activePlatform);
+      } else {
+        await fetch(`/api/channels/${activePlatform}/disconnect`, { method: 'POST' });
+        onSaveCredentials(activePlatform, {
+          credentialInfo: 'No conectado',
+          accountUsername: '',
+          status: 'disconnected',
+        });
+      }
+      setQrDataUrl(null);
+      setVerifiedSuccess(false);
+      onClose();
+    } catch (err: any) {
+      alert(`Error al desvincular: ${err.message}`);
+    } finally {
+      setIsDisconnecting(false);
+    }
   };
+
+  const handleDisconnect = handleSecurityDisconnect;
 
   const handleCopyWebhook = () => {
     navigator.clipboard.writeText(`https://velvetdesk.app/api/webhooks/${activePlatform}`);
@@ -249,41 +315,24 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                   {/* Simulated QR Code Canvas */}
                   <div className="flex flex-col items-center">
                     <div className="w-48 h-48 bg-white p-3 rounded-2xl shadow-xl flex flex-col items-center justify-center relative group">
-                      {/* SVG QR Code Simulation */}
-                      <svg viewBox="0 0 100 100" className="w-full h-full text-slate-950">
-                        {/* QR Pattern */}
-                        <rect x="0" y="0" width="30" height="30" fill="currentColor" rx="4" />
-                        <rect x="5" y="5" width="20" height="20" fill="white" rx="2" />
-                        <rect x="9" y="9" width="12" height="12" fill="currentColor" rx="1" />
+                      {/* Real QR Code or Loader */}
+                      {qrDataUrl ? (
+                        <img src={qrDataUrl} alt="WhatsApp QR" className="w-full h-full object-contain" />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center w-full h-full text-slate-400">
+                          <RefreshCw className="w-6 h-6 animate-spin mb-2" />
+                          <span className="text-[10px] text-center px-2">Cargando código QR de WhatsApp...</span>
+                        </div>
+                      )}
 
-                        <rect x="70" y="0" width="30" height="30" fill="currentColor" rx="4" />
-                        <rect x="75" y="5" width="20" height="20" fill="white" rx="2" />
-                        <rect x="79" y="9" width="12" height="12" fill="currentColor" rx="1" />
-
-                        <rect x="0" y="70" width="30" height="30" fill="currentColor" rx="4" />
-                        <rect x="5" y="75" width="20" height="20" fill="white" rx="2" />
-                        <rect x="9" y="79" width="12" height="12" fill="currentColor" rx="1" />
-
-                        {/* Noise dots */}
-                        <circle cx="45" cy="15" r="3" fill="currentColor" />
-                        <circle cx="55" cy="25" r="3" fill="currentColor" />
-                        <circle cx="40" cy="40" r="4" fill="currentColor" />
-                        <circle cx="50" cy="50" r="5" fill="#25d366" />
-                        <circle cx="60" cy="40" r="4" fill="currentColor" />
-                        <circle cx="45" cy="75" r="3" fill="currentColor" />
-                        <circle cx="75" cy="55" r="3" fill="currentColor" />
-                        <circle cx="85" cy="70" r="3" fill="currentColor" />
-                        <circle cx="85" cy="85" r="4" fill="currentColor" />
-                      </svg>
-
-                      {/* Scan trigger overlay */}
-                      <div className="absolute inset-0 bg-slate-950/80 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-2 text-center">
+                      {/* Manual trigger overlay in case QR isn't working */}
+                      <div className="absolute inset-0 bg-slate-950/80 rounded-2xl flex flex-col items-center justify-center opacity-0 hover:opacity-100 transition-opacity p-2 text-center">
                         <button
                           type="button"
                           onClick={handleTestAndConnect}
                           className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs cursor-pointer"
                         >
-                          Simular Escaneo
+                          Forzar Conexión (Simular)
                         </button>
                       </div>
                     </div>
@@ -576,18 +625,18 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
         </div>
 
         {/* Footer Actions */}
+        {/* Footer Actions */}
         <div className="px-5 py-3.5 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
-          {currentChannel.status === 'connected' ? (
-            <button
-              type="button"
-              onClick={handleDisconnect}
-              className="text-xs text-rose-400 hover:text-rose-300 font-medium cursor-pointer"
-            >
-              Desvincular cuenta
-            </button>
-          ) : (
-            <div />
-          )}
+          <button
+            type="button"
+            disabled={isDisconnecting}
+            onClick={handleSecurityDisconnect}
+            className="text-xs text-rose-400 hover:text-rose-200 hover:bg-rose-950/50 border border-rose-500/30 px-3 py-1.5 rounded-xl font-medium cursor-pointer transition-all flex items-center gap-1.5 shadow-sm"
+            title="Borra la sesión en el servidor y desvincula la cuenta de forma limpia"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+            <span>{isDisconnecting ? 'Borrando sesión...' : 'Desvincular & Borrar Sesión'}</span>
+          </button>
 
           <div className="flex items-center gap-2">
             <button

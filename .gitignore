@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+wa-session/
+voicestudio/
+public/audio/
+public/vault_media/
+voice_config_backups/

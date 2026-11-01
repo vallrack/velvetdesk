@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Bot,
   Sparkles,
@@ -13,9 +13,18 @@ import {
   MessageSquare,
   ShieldAlert,
   ArrowRight,
+  ClipboardList,
+  RefreshCw,
+  Volume2,
+  Search,
+  Filter,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react';
-import { BotPersona, BotRule, FAQItem, VaultItem } from '../../types';
+import { BotPersona, BotRule, FAQItem, VaultItem, BotAuditLog } from '../../types';
 import { requestBotReply } from '../../services/geminiService';
+import { fetchBotAuditLogs, clearBotAuditLogs } from '../../services/apiService';
 
 interface BotEngineViewProps {
   persona: BotPersona;
@@ -36,7 +45,42 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
   onUpdateRules,
   onUpdateFaqs,
 }) => {
-  const [activeTab, setActiveTab] = useState<'persona' | 'rules' | 'faqs' | 'test'>('persona');
+  const [activeTab, setActiveTab] = useState<'persona' | 'rules' | 'faqs' | 'test' | 'audit'>('persona');
+
+  // Audit Logs State
+  const [auditLogs, setAuditLogs] = useState<BotAuditLog[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditPlatformFilter, setAuditPlatformFilter] = useState<string>('all');
+  const [auditTypeFilter, setAuditTypeFilter] = useState<'all' | 'voice' | 'text'>('all');
+
+  const loadAuditLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const logs = await fetchBotAuditLogs();
+      setAuditLogs(logs || []);
+    } catch (e) {
+      console.error('Error fetching bot audit logs:', e);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'audit') {
+      loadAuditLogs();
+    }
+  }, [activeTab]);
+
+  const handleClearLogs = async () => {
+    if (!window.confirm('¿Seguro que deseas vaciar el historial de logs del bot?')) return;
+    try {
+      await clearBotAuditLogs();
+      setAuditLogs([]);
+    } catch (e) {
+      console.error('Error clearing audit logs:', e);
+    }
+  };
 
   // Local state for persona
   const [currentPersona, setCurrentPersona] = useState<BotPersona>(persona);
@@ -236,6 +280,15 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
               }`}
             >
               ✨ Simulador
+            </button>
+            <button
+              onClick={() => setActiveTab('audit')}
+              className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'audit' ? 'bg-pink-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              Auditoría & Logs
             </button>
           </div>
         </div>
@@ -830,6 +883,234 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
                 Probar
               </button>
             </form>
+          </div>
+        )}
+
+        {/* TAB 5: AUDIT LOGS & DECISION TRAIL */}
+        {activeTab === 'audit' && (
+          <div className="max-w-6xl space-y-6">
+            {/* Header & Controls */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-pink-400" />
+                    Registro de Auditoría & Decisiones del Bot (RF-Audit)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Supervisa en tiempo real qué respondió la IA, cuándo, a quién, latencias del modelo y activación de notas de voz.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={loadAuditLogs}
+                    disabled={isLoadingLogs}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                    title="Actualizar registro"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLogs ? 'animate-spin' : ''}`} />
+                    Actualizar
+                  </button>
+                  <button
+                    onClick={handleClearLogs}
+                    disabled={auditLogs.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-950/40 hover:bg-red-900/60 border border-red-800/40 text-red-300 rounded-xl text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    title="Limpiar registro"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick KPI stats */}
+              {(() => {
+                const totalLogs = auditLogs.length;
+                const voiceCount = auditLogs.filter((l) => l.isVoice).length;
+                const avgLatency =
+                  totalLogs > 0
+                    ? Math.round(auditLogs.reduce((acc, l) => acc + (l.latencyMs || 0), 0) / totalLogs)
+                    : 0;
+                const buyPpvCount = auditLogs.filter((l) => l.intent === 'BUY_PPV').length;
+
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                    <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase font-mono block">Decisiones Totales</span>
+                      <span className="text-base font-bold text-white font-mono mt-0.5 block">{totalLogs}</span>
+                    </div>
+                    <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase font-mono block">Notas de Voz</span>
+                      <span className="text-base font-bold text-pink-400 font-mono mt-0.5 block">
+                        {voiceCount} ({totalLogs > 0 ? Math.round((voiceCount / totalLogs) * 100) : 0}%)
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase font-mono block">Latencia Media</span>
+                      <span className="text-base font-bold text-emerald-400 font-mono mt-0.5 block">
+                        {avgLatency} ms
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase font-mono block">Ofertas PPV</span>
+                      <span className="text-base font-bold text-amber-400 font-mono mt-0.5 block">
+                        {buyPpvCount} veces
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Filters */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={auditPlatformFilter}
+                    onChange={(e) => setAuditPlatformFilter(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-pink-500 cursor-pointer"
+                  >
+                    <option value="all">Todas las plataformas</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="telegram">Telegram</option>
+                    <option value="fansly">Fansly</option>
+                    <option value="manyvids">ManyVids</option>
+                  </select>
+
+                  <select
+                    value={auditTypeFilter}
+                    onChange={(e) => setAuditTypeFilter(e.target.value as any)}
+                    className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-pink-500 cursor-pointer"
+                  >
+                    <option value="all">Todos los formatos</option>
+                    <option value="voice">🎙️ Con Nota de Voz</option>
+                    <option value="text">💬 Solo Texto</option>
+                  </select>
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por fan, mensaje, respuesta..."
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-pink-500 placeholder:text-slate-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Audit Log Entries List */}
+            {(() => {
+              const filteredLogs = auditLogs.filter((log) => {
+                const q = auditSearch.toLowerCase();
+                const matchSearch =
+                  log.fanName.toLowerCase().includes(q) ||
+                  log.incomingText.toLowerCase().includes(q) ||
+                  log.botReply.toLowerCase().includes(q) ||
+                  (log.intent && log.intent.toLowerCase().includes(q));
+                const matchPlatform =
+                  auditPlatformFilter === 'all' || log.platform.toLowerCase() === auditPlatformFilter;
+                const matchType =
+                  auditTypeFilter === 'all' ||
+                  (auditTypeFilter === 'voice' && log.isVoice) ||
+                  (auditTypeFilter === 'text' && !log.isVoice);
+                return matchSearch && matchPlatform && matchType;
+              });
+
+              if (filteredLogs.length === 0) {
+                return (
+                  <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 text-xs space-y-2">
+                    <ClipboardList className="w-8 h-8 text-slate-600 mx-auto" />
+                    <p className="font-medium text-slate-300">Sin registros de auditoría que coincidan.</p>
+                    <p className="text-slate-500">
+                      Los eventos se generarán automáticamente cuando el bot responda mensajes en WhatsApp, Telegram o el simulador.
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filteredLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 transition-all space-y-3"
+                    >
+                      {/* Top Meta Row */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-white">{log.fanName}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-300 font-mono uppercase">
+                            {log.fanTier}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono uppercase">
+                            {log.platform}
+                          </span>
+                          {log.intent && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-mono">
+                              Intención: {log.intent}
+                            </span>
+                          )}
+                          {log.isVoice && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 font-mono flex items-center gap-1 font-semibold">
+                              <Volume2 className="w-3 h-3 text-purple-400" />
+                              Audio Clonado
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 text-slate-500 font-mono text-[11px]">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              log.latencyMs < 1200
+                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                : 'bg-amber-950 text-amber-400 border border-amber-800'
+                            }`}
+                          >
+                            {log.latencyMs} ms
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Messages Comparison */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 text-xs">
+                        {/* Fan Prompt */}
+                        <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 space-y-1">
+                          <span className="text-[10px] font-mono uppercase text-slate-400 block font-semibold">
+                            Mensaje Entrante del Fan
+                          </span>
+                          <p className="text-slate-200 leading-relaxed italic">
+                            "{log.incomingText || 'Sin texto inicial'}"
+                          </p>
+                        </div>
+
+                        {/* Bot Reply */}
+                        <div className="bg-pink-950/20 p-3 rounded-xl border border-pink-500/20 space-y-1">
+                          <span className="text-[10px] font-mono uppercase text-pink-400 block font-semibold flex items-center justify-between">
+                            <span>Respuesta Generada por VelvetBot</span>
+                            <span className="text-[9px] text-slate-400 font-normal">{log.modelUsed}</span>
+                          </span>
+                          <p className="text-pink-100 leading-relaxed font-normal">
+                            {log.botReply}
+                          </p>
+                          {log.suggestedPpvId && (
+                            <span className="inline-block mt-1 text-[10px] text-amber-300 font-mono">
+                              ⭐ Contenido PPV sugerido: {log.suggestedPpvId}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

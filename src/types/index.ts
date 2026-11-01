@@ -69,6 +69,7 @@ export interface Message {
     duration?: string;
     isViewOnce?: boolean; // WhatsApp View Once
     isVoiceNote?: boolean; // WhatsApp Voice note
+    gender?: 'female' | 'male'; // Voice note gender
     ppvPrice?: number; // USD
     isPpv?: boolean;
     isUnlocked?: boolean;
@@ -162,4 +163,21 @@ export interface ChannelIntegration {
   webhookUrl?: string;
   apiKeyOrToken?: string;
   sessionCookie?: string;
+}
+
+export interface BotAuditLog {
+  id: string;
+  timestamp: string;
+  fanName: string;
+  fanTier: string;
+  platform: string;
+  incomingText: string;
+  botReply: string;
+  intent?: string;
+  suggestedPpvId?: string | null;
+  isVoice: boolean;
+  latencyMs: number;
+  modelUsed: string;
+  status: 'replied' | 'fallback' | 'rule_triggered' | 'error';
+  ruleMatched?: string;
 }

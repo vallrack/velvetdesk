@@ -4,8 +4,10 @@ import {
   Bot,
   PlayCircle,
   Menu,
+  LogOut,
 } from 'lucide-react';
 import { ChannelIntegration } from '../../types';
+import type { AuthUser } from '../../services/authService';
 
 interface NavbarProps {
   channels: ChannelIntegration[];
@@ -15,6 +17,8 @@ interface NavbarProps {
   onOpenMobileMenu: () => void;
   todayTotalRevenue: number;
   unreadCount: number;
+  authUser?: AuthUser | null;
+  onLogout?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -25,6 +29,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMobileMenu,
   todayTotalRevenue,
   unreadCount,
+  authUser,
+  onLogout,
 }) => {
   return (
     <header className="h-16 border-b border-slate-800 bg-slate-950 px-3 sm:px-6 flex items-center justify-between shrink-0 z-30">
@@ -112,6 +118,29 @@ export const Navbar: React.FC<NavbarProps> = ({
             ${todayTotalRevenue.toFixed(2)}
           </span>
         </div>
+
+        {/* User Avatar + Logout */}
+        {authUser && (
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #a855f7, #ec4899)' }}>
+                {authUser.email?.[0]?.toUpperCase() || '?'}
+              </div>
+              <span className="text-[11px] text-slate-300 font-mono max-w-[120px] truncate">
+                {authUser.email}
+              </span>
+            </div>
+            <button
+              id="navbar-logout-btn"
+              onClick={onLogout}
+              className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-950/30 border border-slate-800 hover:border-red-500/30 transition-all"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
