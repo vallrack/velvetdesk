@@ -100,22 +100,47 @@ app.get(['/api/threads', '/threads'], async (req: Request, res: Response) => {
 app.get(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Request, res: Response) => {
   const { id } = req.params;
   if (db) {
-    const { data, error } = await db.from('messages').select('*').eq('chat_id', id).order('timestamp', { ascending: true });
-    if (!error && data) return res.json(data);
+    const { data, error } = await db.from('messages').select('*').eq('chat_id', id).order('created_at', { ascending: true });
+    if (!error) {
+      return res.json((data || []).map((m: any) => ({
+        id: m.id,
+        chatId: m.chat_id,
+        sender: m.sender,
+        text: m.text,
+        timestamp: m.timestamp,
+        status: m.status,
+        media: m.media || undefined,
+        paymentDetails: m.payment_details || undefined,
+      })));
+    }
   }
+  // Mock only when Supabase not configured
   res.json([
-    { id: 'm-1', chat_id: id, sender: 'fan', text: 'Hola hermosa, qué tienes nuevo hoy?', timestamp: '14:30', status: 'read' },
-    { id: 'm-2', chat_id: id, sender: 'bot', text: '¡Hola amor! 💕 Acabo de subir un set en la ducha espectacular por $35 USD 🔥', timestamp: '14:31', status: 'delivered' },
+    { id: 'm-1', chatId: id, sender: 'fan', text: 'Hola hermosa, qué tienes nuevo hoy?', timestamp: '14:30', status: 'read' },
+    { id: 'm-2', chatId: id, sender: 'bot', text: '¡Hola amor! 💕 Acabo de subir un set en la ducha espectacular por $35 USD 🔥', timestamp: '14:31', status: 'delivered' },
   ]);
 });
 
-app.post(['/api/threads/:id/messages', '/threads/:id/messages'], (req: Request, res: Response) => {
+app.post(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Request, res: Response) => {
   const msg = {
     id: `msg-${Date.now()}`,
     chat_id: req.params.id,
     ...req.body,
-    timestamp: req.body.timestamp || 'Ahora',
+    timestamp: req.body.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   };
+  if (db) {
+    const { error } = await db.from('messages').insert({
+      id: msg.id,
+      chat_id: msg.chat_id,
+      sender: msg.sender,
+      text: msg.text || '',
+      timestamp: msg.timestamp,
+      status: msg.status || 'delivered',
+      media: msg.media || null,
+      payment_details: msg.paymentDetails || null,
+    });
+    if (error) console.warn('[Supabase] Insert message warning:', error.message);
+  }
   res.json(msg);
 });
 
@@ -232,6 +257,13 @@ app.delete(['/api/fans/:id', '/fans/:id'], async (req: Request, res: Response) =
   const { id } = req.params;
 
   if (db) {
+    // Cascade: delete threads and messages belonging to this fan
+    const { data: fanThreads } = await db.from('threads').select('id').eq('fan_id', id);
+    if (fanThreads && fanThreads.length > 0) {
+      const threadIds = fanThreads.map((t: any) => t.id);
+      await db.from('messages').delete().in('chat_id', threadIds);
+      await db.from('threads').delete().in('id', threadIds);
+    }
     const { error } = await db.from('fans').delete().eq('id', id);
     if (error) console.warn('[Supabase] Delete fan warning:', error.message);
   }
@@ -246,6 +278,13 @@ app.post(['/api/fans/batch-delete', '/fans/batch-delete'], async (req: Request, 
   }
 
   if (db) {
+    // Cascade: delete threads and messages for all fans in batch
+    const { data: fanThreads } = await db.from('threads').select('id').in('fan_id', ids);
+    if (fanThreads && fanThreads.length > 0) {
+      const threadIds = fanThreads.map((t: any) => t.id);
+      await db.from('messages').delete().in('chat_id', threadIds);
+      await db.from('threads').delete().in('id', threadIds);
+    }
     const { error } = await db.from('fans').delete().in('id', ids);
     if (error) console.warn('[Supabase] Batch delete fans warning:', error.message);
   }
@@ -273,8 +312,8 @@ app.post(['/api/fans/batch-update', '/fans/batch-update'], async (req: Request, 
 app.get(['/api/vault', '/vault'], async (_req: Request, res: Response) => {
   if (db) {
     const { data, error } = await db.from('vault_items').select('*').order('created_at', { ascending: false });
-    if (!error && data) {
-      const mapped = data.map((v: any) => ({
+    if (!error) {
+      const mapped = (data || []).map((v: any) => ({
         id: v.id,
         title: v.title,
         description: v.description,
@@ -285,19 +324,88 @@ app.get(['/api/vault', '/vault'], async (_req: Request, res: Response) => {
         price: Number(v.price) || 0,
         duration: v.duration,
         fileSize: v.file_size,
-        createdDate: v.created_date,
+        createdDate: v.created_date || v.created_at?.split('T')[0] || '',
       }));
       return res.json(mapped);
     }
   }
+  // Mock only when Supabase not configured
   res.json([
     { id: 'vault-1', title: 'Set Ducha & Seda Roja 4K', description: 'Video exclusivo grabado en alta definición con lencería de seda.', type: 'video', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&auto=format&fit=crop&q=80', thumbnailUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300&auto=format&fit=crop&q=80', tags: ['Lencería', 'Video Largo', 'Exclusivo'], price: 35, duration: '08:42', createdDate: '28 Oct 2026' },
     { id: 'vault-2', title: 'Audio Buenas Noches Personalizado', description: 'Nota de voz sugerente susurrada con voz clonada.', type: 'audio', url: '/audio/demo.mp3', thumbnailUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80', tags: ['Audio Personalizado'], price: 20, duration: '02:15', createdDate: '29 Oct 2026' },
   ]);
 });
 
-// ── Bot Persona, Rules, FAQs, Gateways ────────────────────────────────────────
-app.get(['/api/bot/persona', '/bot/persona'], (_req: Request, res: Response) => {
+app.post(['/api/vault', '/vault'], async (req: Request, res: Response) => {
+  const item = req.body;
+  const newId = item.id || `vault-${Date.now()}`;
+  const dbPayload = {
+    id: newId,
+    title: item.title || 'Sin título',
+    description: item.description || '',
+    type: item.type || 'image',
+    url: item.url || '',
+    thumbnail_url: item.thumbnailUrl || item.url || '',
+    tags: item.tags || [],
+    price: Number(item.price) || 0,
+    duration: item.duration || null,
+    file_size: item.fileSize || null,
+    created_date: item.createdDate || new Date().toISOString().split('T')[0],
+  };
+  if (db) {
+    const { error } = await db.from('vault_items').insert(dbPayload);
+    if (error) console.warn('[Supabase] Insert vault_item warning:', error.message);
+  }
+  res.json({ ...dbPayload, thumbnailUrl: dbPayload.thumbnail_url, fileSize: dbPayload.file_size, createdDate: dbPayload.created_date });
+});
+
+app.patch(['/api/vault/:id', '/vault/:id'], async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const updates = req.body;
+  const dbPayload: any = {};
+  if (updates.title !== undefined) dbPayload.title = updates.title;
+  if (updates.description !== undefined) dbPayload.description = updates.description;
+  if (updates.type !== undefined) dbPayload.type = updates.type;
+  if (updates.url !== undefined) dbPayload.url = updates.url;
+  if (updates.thumbnailUrl !== undefined) dbPayload.thumbnail_url = updates.thumbnailUrl;
+  if (updates.tags !== undefined) dbPayload.tags = updates.tags;
+  if (updates.price !== undefined) dbPayload.price = Number(updates.price);
+  if (updates.duration !== undefined) dbPayload.duration = updates.duration;
+  if (updates.fileSize !== undefined) dbPayload.file_size = updates.fileSize;
+  if (db) {
+    const { error } = await db.from('vault_items').update(dbPayload).eq('id', id);
+    if (error) console.warn('[Supabase] Update vault_item warning:', error.message);
+  }
+  res.json({ success: true, id, ...updates });
+});
+
+app.delete(['/api/vault/:id', '/vault/:id'], async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (db) {
+    const { error } = await db.from('vault_items').delete().eq('id', id);
+    if (error) console.warn('[Supabase] Delete vault_item warning:', error.message);
+  }
+  res.json({ success: true, id });
+});
+
+// ── Bot Persona, Rules, FAQs, Gateways — all persisted in Supabase ────────────
+const SETTINGS_TABLE = 'app_settings'; // key-value store for JSON blobs
+
+async function getSetting(key: string): Promise<any | null> {
+  if (!db) return null;
+  const { data, error } = await db.from(SETTINGS_TABLE).select('value').eq('key', key).single();
+  if (error || !data) return null;
+  return data.value;
+}
+
+async function setSetting(key: string, value: any): Promise<void> {
+  if (!db) return;
+  await db.from(SETTINGS_TABLE).upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+}
+
+app.get(['/api/bot/persona', '/bot/persona'], async (_req: Request, res: Response) => {
+  const stored = await getSetting('bot_persona');
+  if (stored) return res.json(stored);
   res.json({
     tone: 'coqueta',
     toneLabel: 'Coqueta & Sensual',
@@ -310,40 +418,50 @@ app.get(['/api/bot/persona', '/bot/persona'], (_req: Request, res: Response) => 
   });
 });
 
-app.put(['/api/bot/persona', '/bot/persona'], (req: Request, res: Response) => {
+app.put(['/api/bot/persona', '/bot/persona'], async (req: Request, res: Response) => {
+  await setSetting('bot_persona', req.body);
   res.json({ success: true, ...req.body });
 });
 
-app.get(['/api/bot/rules', '/bot/rules'], (_req: Request, res: Response) => {
+app.get(['/api/bot/rules', '/bot/rules'], async (_req: Request, res: Response) => {
+  const stored = await getSetting('bot_rules');
+  if (stored && Array.isArray(stored)) return res.json(stored);
   res.json([
     { id: 'r-1', name: 'Trigger Pregunta de Precio', enabled: true, triggers: ['cuanto', 'precio', 'costo', 'vale'], actionType: 'reply_text', replyContent: 'Mis contenidos van desde $20 en audios hasta $45 en videos largos 4K. ¿Cuál te gustaría ver hoy? 💕' },
     { id: 'r-2', name: 'Trigger Saludo VIP', enabled: true, triggers: ['hola', 'buenas'], actionType: 'reply_text', replyContent: '¡Hola corazón! Qué rico que me escribas hoy ✨ ¿Qué te provoca?' },
   ]);
 });
 
-app.put(['/api/bot/rules', '/bot/rules'], (_req: Request, res: Response) => {
+app.put(['/api/bot/rules', '/bot/rules'], async (req: Request, res: Response) => {
+  await setSetting('bot_rules', req.body);
   res.json({ success: true });
 });
 
-app.get(['/api/faqs', '/faqs'], (_req: Request, res: Response) => {
+app.get(['/api/faqs', '/faqs'], async (_req: Request, res: Response) => {
+  const stored = await getSetting('bot_faqs');
+  if (stored && Array.isArray(stored)) return res.json(stored);
   res.json([
     { id: 'faq-1', question: '¿Haces contenido personalizado?', triggers: ['custom', 'personalizado'], answer: 'Sí cariño, hago videos y audios con tu nombre a partir de 3 minutos. Cuéntame tu fantasía y te doy cotización 💋', category: 'customs', enabled: true },
     { id: 'faq-2', question: '¿Qué medios de pago aceptas?', triggers: ['pago', 'paypal', 'crypto', 'wise'], answer: 'Acepto PayPal, Wise, Binance/USDT y transferencia directa ✨', category: 'pagos', enabled: true },
   ]);
 });
 
-app.put(['/api/faqs', '/faqs'], (_req: Request, res: Response) => {
+app.put(['/api/faqs', '/faqs'], async (req: Request, res: Response) => {
+  await setSetting('bot_faqs', req.body);
   res.json({ success: true });
 });
 
-app.get(['/api/gateways', '/gateways'], (_req: Request, res: Response) => {
+app.get(['/api/gateways', '/gateways'], async (_req: Request, res: Response) => {
+  const stored = await getSetting('payment_gateways');
+  if (stored && Array.isArray(stored)) return res.json(stored);
   res.json([
     { id: 'gw-1', name: 'PayPal Direct', type: 'paypal', enabled: true, walletOrAccount: 'pagos@velvetdesk.com', instructions: 'Enviar como amigos/familiares', currency: 'USD', autoUnlockOnConfirm: true },
     { id: 'gw-2', name: 'USDT (TRC-20)', type: 'crypto', enabled: true, walletOrAccount: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', instructions: 'Enviar red TRON (TRC20)', currency: 'USDT', autoUnlockOnConfirm: true },
   ]);
 });
 
-app.put(['/api/gateways', '/gateways'], (_req: Request, res: Response) => {
+app.put(['/api/gateways', '/gateways'], async (req: Request, res: Response) => {
+  await setSetting('payment_gateways', req.body);
   res.json({ success: true });
 });
 
