@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Bot,
   UserCheck,
@@ -22,6 +22,9 @@ import {
   X,
   Wand2,
   Radio,
+  Search,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { ChatThread, Message, FanProfile, VaultItem, BotPersona, BotRule, PaymentGatewayConfig } from '../../types';
 import { PlatformBadge } from '../common/PlatformBadge';
@@ -589,9 +592,55 @@ export const ChatConversation: React.FC<ChatConversationProps> = ({
   const [showVoicePanel, setShowVoicePanel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // In-Chat Search State
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [chatSearchTerm, setChatSearchTerm] = useState('');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  const matchingMessageIds = useMemo(() => {
+    if (!chatSearchTerm.trim()) return [];
+    const term = chatSearchTerm.toLowerCase();
+    return messages
+      .filter((m) => (m.text || '').toLowerCase().includes(term))
+      .map((m) => m.id);
+  }, [messages, chatSearchTerm]);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (matchingMessageIds.length > 0 && isSearchOpen) {
+      const targetId = matchingMessageIds[currentMatchIndex];
+      if (targetId) {
+        const el = document.getElementById(`msg-${targetId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+  }, [currentMatchIndex, matchingMessageIds, isSearchOpen]);
+
+  const handleNextMatch = () => {
+    if (matchingMessageIds.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev + 1) % matchingMessageIds.length);
+  };
+
+  const handlePrevMatch = () => {
+    if (matchingMessageIds.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev - 1 + matchingMessageIds.length) % matchingMessageIds.length);
+  };
+
+  const renderHighlightedText = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.toLowerCase() ? (
+        <mark key={i} className="bg-pink-500 text-white font-semibold rounded-xs px-0.5">
+          {part}
+        </mark>
+      ) : (
+        part
+      )
+    );
+  };
 
   const handleSend = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -733,6 +782,22 @@ export const ChatConversation: React.FC<ChatConversationProps> = ({
             </button>
           </div>
 
+          {/* In-Chat Search Toggle Button */}
+          <button
+            onClick={() => {
+              setIsSearchOpen(!isSearchOpen);
+              if (isSearchOpen) setChatSearchTerm('');
+            }}
+            className={`p-1.5 sm:p-2 rounded-xl text-xs border flex items-center justify-center cursor-pointer transition-colors shrink-0 ${
+              isSearchOpen
+                ? 'bg-pink-600 text-white border-pink-500 shadow-sm'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/60'
+            }`}
+            title="Buscar en esta conversación"
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+
           <button
             onClick={onToggleFanDrawer}
             className="p-1.5 sm:p-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white text-xs border border-slate-700/60 flex items-center gap-1 cursor-pointer transition-colors shrink-0"
@@ -742,6 +807,66 @@ export const ChatConversation: React.FC<ChatConversationProps> = ({
           </button>
         </div>
       </div>
+
+      {/* In-Chat Search Bar */}
+      {isSearchOpen && (
+        <div className="px-3 sm:px-5 py-2 bg-slate-900 border-b border-slate-800 flex items-center gap-2 z-10">
+          <Search className="w-4 h-4 text-pink-400 shrink-0" />
+          <input
+            type="text"
+            autoFocus
+            value={chatSearchTerm}
+            onChange={(e) => {
+              setChatSearchTerm(e.target.value);
+              setCurrentMatchIndex(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                if (e.shiftKey) handlePrevMatch();
+                else handleNextMatch();
+              } else if (e.key === 'Escape') {
+                setIsSearchOpen(false);
+                setChatSearchTerm('');
+              }
+            }}
+            placeholder="Buscar en esta conversación... (Enter = siguiente, Esc = cerrar)"
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-pink-500/60"
+          />
+          {chatSearchTerm.trim() && (
+            <span className="text-[11px] text-slate-400 font-mono whitespace-nowrap shrink-0">
+              {matchingMessageIds.length > 0
+                ? `${currentMatchIndex + 1} de ${matchingMessageIds.length}`
+                : 'Sin resultados'}
+            </span>
+          )}
+          <button
+            onClick={handlePrevMatch}
+            disabled={matchingMessageIds.length === 0}
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+            title="Coincidencia anterior (Shift+Enter)"
+          >
+            <ChevronUp className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleNextMatch}
+            disabled={matchingMessageIds.length === 0}
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+            title="Siguiente coincidencia (Enter)"
+          >
+            <ChevronDown className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => {
+              setIsSearchOpen(false);
+              setChatSearchTerm('');
+            }}
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+            title="Cerrar búsqueda"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Manual Override Banner */}
       {chat.attendedBy === 'creator' && chat.botPausedReason && (
@@ -790,27 +915,43 @@ export const ChatConversation: React.FC<ChatConversationProps> = ({
               )}
 
               {/* Message Bubble */}
-              <div
-                className={`max-w-[88%] sm:max-w-md rounded-2xl shadow-md transition-all ${
-                  isVoiceNote
-                    ? `px-3.5 py-2.5 ${
-                        isFan
-                          ? 'bg-[#202c33] border border-white/5 rounded-tl-sm text-slate-100'
-                          : 'bg-[#005c4b] border border-emerald-600/30 rounded-tr-sm text-white'
-                      }`
-                    : `p-3 text-xs sm:text-sm ${
-                        isFan
-                          ? 'bg-slate-900 border border-slate-800 text-slate-100 rounded-tl-sm'
-                          : isBot
-                          ? 'bg-gradient-to-br from-pink-950/80 to-purple-950/80 border border-pink-500/30 text-pink-50 rounded-tr-sm'
-                          : 'bg-gradient-to-br from-purple-900/90 to-slate-900 border border-purple-500/40 text-purple-50 rounded-tr-sm'
-                      }`
-                }`}
-              >
-                {/* Text Content (skip for pure voice notes) */}
-                {m.text && !isVoiceNote && (
-                  <p className="whitespace-pre-line leading-relaxed">{m.text}</p>
-                )}
+              {(() => {
+                const isCurrentMatch = isSearchOpen && matchingMessageIds[currentMatchIndex] === m.id;
+                const isAnyMatch = isSearchOpen && matchingMessageIds.includes(m.id);
+
+                return (
+                  <div
+                    id={`msg-${m.id}`}
+                    className={`max-w-[88%] sm:max-w-md rounded-2xl shadow-md transition-all ${
+                      isCurrentMatch
+                        ? 'ring-2 ring-pink-500 shadow-lg shadow-pink-500/30 scale-[1.01]'
+                        : isAnyMatch
+                        ? 'ring-1 ring-pink-500/50'
+                        : ''
+                    } ${
+                      isVoiceNote
+                        ? `px-3.5 py-2.5 ${
+                            isFan
+                              ? 'bg-[#202c33] border border-white/5 rounded-tl-sm text-slate-100'
+                              : 'bg-[#005c4b] border border-emerald-600/30 rounded-tr-sm text-white'
+                          }`
+                        : `p-3 text-xs sm:text-sm ${
+                            isFan
+                              ? 'bg-slate-900 border border-slate-800 text-slate-100 rounded-tl-sm'
+                              : isBot
+                              ? 'bg-gradient-to-br from-pink-950/80 to-purple-950/80 border border-pink-500/30 text-pink-50 rounded-tr-sm'
+                              : 'bg-gradient-to-br from-purple-900/90 to-slate-900 border border-purple-500/40 text-purple-50 rounded-tr-sm'
+                          }`
+                    }`}
+                  >
+                    {/* Text Content (skip for pure voice notes) */}
+                    {m.text && !isVoiceNote && (
+                      <p className="whitespace-pre-line leading-relaxed">
+                        {isSearchOpen && chatSearchTerm.trim()
+                          ? renderHighlightedText(m.text, chatSearchTerm.trim())
+                          : m.text}
+                      </p>
+                    )}
 
                 {/* Voice Note — WhatsApp style, no header, timestamp and checks inside player */}
                 {isVoiceNote && (
@@ -954,8 +1095,10 @@ export const ChatConversation: React.FC<ChatConversationProps> = ({
                   )}
                 </div>
               </div>
-            </div>
-          );
+            );
+          })()}
+        </div>
+      );
         })}
         <div ref={messagesEndRef} />
       </div>

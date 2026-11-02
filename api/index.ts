@@ -144,6 +144,35 @@ app.post(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Req
   res.json(msg);
 });
 
+// ── Search Messages in Supabase ──────────────────────────────────────────────
+app.get(['/api/messages/search', '/messages/search'], async (req: Request, res: Response) => {
+  const query = String(req.query.q || '').trim();
+  if (!query) return res.json({ data: [] });
+  if (db) {
+    const { data, error } = await db
+      .from('messages')
+      .select('*')
+      .ilike('text', `%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!error && data) {
+      return res.json({
+        data: data.map((m: any) => ({
+          id: m.id,
+          chatId: m.chat_id,
+          sender: m.sender,
+          text: m.text,
+          timestamp: m.timestamp,
+          status: m.status,
+          media: m.media || undefined,
+          paymentDetails: m.payment_details || undefined,
+        })),
+      });
+    }
+  }
+  res.json({ data: [] });
+});
+
 // ── Fans ─────────────────────────────────────────────────────────────────────
 app.get(['/api/fans', '/fans'], async (_req: Request, res: Response) => {
   if (db) {

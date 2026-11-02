@@ -148,6 +148,7 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
       {/* Col 1: Threads List (hidden on mobile when viewing chat) */}
       <ChatList
         threads={threads}
+        messagesMap={messagesMap}
         activeChatId={activeChat?.id || null}
         onSelectChat={handleSelectChat}
         selectedPlatform={selectedPlatform}
