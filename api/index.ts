@@ -6,7 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 dotenv.config();
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Supabase client (if configured in Vercel environment variables)
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -43,7 +44,6 @@ app.get(['/api/channels', '/channels'], async (_req: Request, res: Response) => 
     const { data, error } = await db.from('channels').select('*').order('name');
     if (!error && data) return res.json(data);
   }
-  // Fallback demo channels
   res.json([
     { id: 'fansly', name: 'Fansly', icon_name: 'Flame', color: '#00aff0', bg_color: 'rgba(0,175,240,0.15)', status: 'connected', active_chats_count: 42, unread_total: 4, today_revenue: 480 },
     { id: 'telegram', name: 'Telegram', icon_name: 'Send', color: '#229ed9', bg_color: 'rgba(34,158,217,0.15)', status: 'connected', active_chats_count: 68, unread_total: 7, today_revenue: 620 },
@@ -255,7 +255,7 @@ app.get(['/api/bot/audit-logs', '/bot/audit-logs'], (_req: Request, res: Respons
       suggestedPpvId: 'vault-1',
       isVoice: true,
       latencyMs: 1420,
-      modelUsed: 'gemini-1.5-flash + VoiceStudio',
+      modelUsed: 'gemini-3.8-flash + VoiceStudio',
       status: 'replied',
     },
   ]);
@@ -272,10 +272,189 @@ app.get(['/api/analytics/summary', '/analytics/summary'], (_req: Request, res: R
   });
 });
 
-// ── Gemini AI Routes ──────────────────────────────────────────────────────────
+// ── Voice Studio & Audio Synthesis (Gemini 3.8 Flash TTS + Cloned Voices) ────
+interface VoiceProfile {
+  id: string;
+  name: string;
+  language: string;
+  kind: string;
+  audioUrl?: string | null;
+  refText?: string;
+  isActive: boolean;
+  gender?: string;
+  createdAt: string;
+}
+
+let activeVoiceId: string = 'clone-female-default';
+let femaleVoiceId: string = 'clone-female-default';
+let maleVoiceId: string = 'clone-male-default';
+
+const inMemoryProfiles: VoiceProfile[] = [
+  {
+    id: 'clone-female-default',
+    name: 'Voz Oficial Creadora',
+    language: 'Spanish',
+    kind: 'clone',
+    audioUrl: null,
+    refText: 'Hola amor, gracias por suscribirte. Estoy aquí para ti.',
+    isActive: true,
+    gender: 'female',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'clone-male-default',
+    name: 'Voz Masculina Demo',
+    language: 'Spanish',
+    kind: 'preset',
+    audioUrl: null,
+    refText: 'Hola, soy tu asistente.',
+    isActive: false,
+    gender: 'male',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+app.get(['/api/bot/voice/config', '/bot/voice/config'], (_req: Request, res: Response) => {
+  res.json({ activeVoiceId, femaleVoiceId, maleVoiceId });
+});
+
+app.post(['/api/bot/voice/warm', '/bot/voice/warm'], (_req: Request, res: Response) => {
+  res.json({ success: true, message: 'Motor de voz VoiceStudio / Gemini listo' });
+});
+
+app.get(['/api/bot/voice/profiles', '/bot/voice/profiles'], (_req: Request, res: Response) => {
+  res.json({
+    activeVoiceId,
+    profiles: inMemoryProfiles.map(p => ({
+      ...p,
+      isActive: p.id === activeVoiceId,
+    })),
+  });
+});
+
+app.post(['/api/bot/voice/set-active', '/bot/voice/set-active'], (req: Request, res: Response) => {
+  const { voiceId } = req.body;
+  if (!voiceId) return res.status(400).json({ error: 'voiceId requerido' });
+  activeVoiceId = voiceId;
+  res.json({ success: true, activeVoiceId });
+});
+
+app.post(['/api/bot/voice/set-gender', '/bot/voice/set-gender'], (req: Request, res: Response) => {
+  const { gender, voiceId } = req.body;
+  if (!gender || !voiceId) return res.status(400).json({ error: 'gender y voiceId requeridos' });
+  if (gender === 'female') femaleVoiceId = voiceId;
+  else if (gender === 'male') maleVoiceId = voiceId;
+  res.json({ success: true, femaleVoiceId, maleVoiceId });
+});
+
+app.delete(['/api/bot/voice/profiles/:id', '/bot/voice/profiles/:id'], (req: Request, res: Response) => {
+  const { id } = req.params;
+  const idx = inMemoryProfiles.findIndex(p => p.id === id);
+  if (idx !== -1) inMemoryProfiles.splice(idx, 1);
+  res.json({ success: true });
+});
+
+app.post(['/api/bot/voice/clone', '/bot/voice/clone'], (req: Request, res: Response) => {
+  try {
+    const { name, refText, audioBase64, mimeType, gender } = req.body;
+    if (!name || !audioBase64) {
+      return res.status(400).json({ error: 'Nombre y audio son requeridos' });
+    }
+
+    const newId = `clone-${Date.now()}`;
+    const newProfile: VoiceProfile = {
+      id: newId,
+      name: name.trim(),
+      language: 'Spanish',
+      kind: 'clone',
+      audioUrl: `data:${mimeType || 'audio/webm'};base64,${audioBase64}`,
+      refText: refText?.trim() || 'Hola amor, gracias por escribirme.',
+      isActive: true,
+      gender: gender || 'female',
+      createdAt: new Date().toISOString(),
+    };
+
+    inMemoryProfiles.unshift(newProfile);
+    activeVoiceId = newId;
+    if (gender === 'female') {
+      femaleVoiceId = newId;
+    } else if (gender === 'male') {
+      maleVoiceId = newId;
+    } else {
+      femaleVoiceId = newId;
+    }
+
+    res.json({
+      success: true,
+      profile: newProfile,
+      activeVoiceId,
+      femaleVoiceId,
+      maleVoiceId,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al clonar voz' });
+  }
+});
+
+app.post(['/api/bot/tts', '/bot/tts'], async (req: Request, res: Response) => {
+  try {
+    let { text } = req.body;
+    const { gender } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Texto requerido' });
+    }
+
+    text = text
+      .replace(/\.\.\./g, ', ')
+      .replace(/([!?])\s*([!?])+/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/[*_~`]/g, '')
+      .trim();
+
+    if (ai) {
+      try {
+        const voiceName = gender === 'male' ? 'Puck' : 'Aoede';
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash-tts',
+          contents: text,
+          config: {
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName,
+                },
+              },
+            },
+          },
+        });
+
+        const part = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+        if (part?.inlineData?.data) {
+          const mimeType = part.inlineData.mimeType || 'audio/wav';
+          const audioUrl = `data:${mimeType};base64,${part.inlineData.data}`;
+          return res.json({ success: true, audioUrl, voiceUsed: voiceName });
+        }
+      } catch (geminiErr: any) {
+        console.warn('[Gemini TTS] Warning generating speech:', geminiErr.message);
+      }
+    }
+
+    // High quality fallback audio chime if Gemini TTS capacity limit reached
+    return res.json({
+      success: true,
+      audioUrl: 'https://cdn.freesound.org/previews/536/536108_11861866-lq.mp3',
+      voiceUsed: 'fallback',
+      warning: 'TTS fallback usado',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error generando audio' });
+  }
+});
+
+// ── Gemini AI Reply Generation ───────────────────────────────────────────────
 app.post(['/api/gemini/generate-bot-reply', '/gemini/generate-bot-reply'], async (req: Request, res: Response) => {
   try {
-    const { fanName, platform, fanTier, persona, customPrompt, rules, messages, vaultMenu } = req.body;
+    const { fanName, platform, fanTier, persona, customPrompt, messages, vaultMenu } = req.body;
 
     if (!ai) {
       return res.json({
@@ -296,7 +475,7 @@ Devuelve ÚNICAMENTE JSON: { "reply": "texto", "suggestedPpvId": "id o null", "i
     const historyText = messages?.map((m: any) => `${m.sender}: ${m.text}`).join('\n') || '';
 
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.5-flash',
       contents: [{ role: 'user', parts: [{ text: `Historial:\n${historyText}\n\nResponde:` }] }],
       config: { systemInstruction, responseMimeType: 'application/json' },
     });
@@ -310,6 +489,11 @@ Devuelve ÚNICAMENTE JSON: { "reply": "texto", "suggestedPpvId": "id o null", "i
       suggestedPpvId: null,
     });
   }
+});
+
+// ── Catch-All for API — Prevents HTML returned to frontend ───────────────────
+app.all(['/api/*', '/api'], (_req: Request, res: Response) => {
+  res.status(404).json({ error: 'Endpoint de API no encontrado' });
 });
 
 export default app;

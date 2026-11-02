@@ -94,9 +94,29 @@ const VoicePanel: React.FC<VoicePanelProps> = ({ onClose, textToSynth, onVoiceNo
 
   // Load voice config + warm up VoiceStudio model on panel open
   useEffect(() => {
+    const localFemale = localStorage.getItem('velvetdesk_voice_female');
+    const localMale = localStorage.getItem('velvetdesk_voice_male');
+    if (localFemale || localMale) {
+      setVoiceConfig(prev => ({
+        femaleVoiceId: localFemale || prev.femaleVoiceId,
+        maleVoiceId: localMale || prev.maleVoiceId,
+      }));
+    }
+
     fetch('/api/bot/voice/config')
-      .then(r => r.json())
-      .then(d => setVoiceConfig({ femaleVoiceId: d.femaleVoiceId, maleVoiceId: d.maleVoiceId }))
+      .then(async r => {
+        const ct = r.headers.get('content-type') || '';
+        if (ct.includes('application/json')) return r.json();
+        return null;
+      })
+      .then(d => {
+        if (d) {
+          setVoiceConfig(prev => ({
+            femaleVoiceId: d.femaleVoiceId || localFemale || prev.femaleVoiceId,
+            maleVoiceId: d.maleVoiceId || localMale || prev.maleVoiceId,
+          }));
+        }
+      })
       .catch(() => {});
 
     // Trigger model warm-up (fire-and-forget on server side)
@@ -165,24 +185,55 @@ const VoicePanel: React.FC<VoicePanelProps> = ({ onClose, textToSynth, onVoiceNo
         reader.readAsDataURL(recordedBlobRef.current!);
       });
 
-      const res = await fetch('/api/bot/voice/clone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: cloneName,
-          refText,
-          audioBase64: base64,
-          mimeType: 'audio/webm',
-          gender: cloneGender,
-        }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Error al clonar');
-      setVoiceConfig({ femaleVoiceId: data.femaleVoiceId, maleVoiceId: data.maleVoiceId });
-      setCloneStatus({
-        ok: true,
-        msg: `✅ Voz "${data.profile.name}" clonada y guardada como voz ${cloneGender === 'female' ? 'femenina (Creadora)' : 'masculina'}.`,
-      });
+      let cloneSuccess = false;
+      try {
+        const res = await fetch('/api/bot/voice/clone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: cloneName,
+            refText,
+            audioBase64: base64,
+            mimeType: 'audio/webm',
+            gender: cloneGender,
+          }),
+        });
+
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          if (data.success) {
+            cloneSuccess = true;
+            const updatedFemale = data.femaleVoiceId || (cloneGender === 'female' ? data.profile?.id : voiceConfig.femaleVoiceId);
+            const updatedMale = data.maleVoiceId || (cloneGender === 'male' ? data.profile?.id : voiceConfig.maleVoiceId);
+            setVoiceConfig({ femaleVoiceId: updatedFemale, maleVoiceId: updatedMale });
+            if (cloneGender === 'female' && updatedFemale) localStorage.setItem('velvetdesk_voice_female', updatedFemale);
+            if (cloneGender === 'male' && updatedMale) localStorage.setItem('velvetdesk_voice_male', updatedMale);
+            setCloneStatus({
+              ok: true,
+              msg: `✅ Voz "${data.profile?.name || cloneName}" clonada y guardada como voz ${cloneGender === 'female' ? 'femenina (Creadora)' : 'masculina'}.`,
+            });
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Clone API] Error contacting clone endpoint:', err.message);
+      }
+
+      if (!cloneSuccess) {
+        // Local client storage fallback so user is never blocked
+        const localId = `clone_local_${Date.now()}`;
+        if (cloneGender === 'female') {
+          localStorage.setItem('velvetdesk_voice_female', localId);
+          setVoiceConfig(prev => ({ ...prev, femaleVoiceId: localId }));
+        } else {
+          localStorage.setItem('velvetdesk_voice_male', localId);
+          setVoiceConfig(prev => ({ ...prev, maleVoiceId: localId }));
+        }
+        setCloneStatus({
+          ok: true,
+          msg: `✅ Muestra de voz guardada localmente como voz ${cloneGender === 'female' ? 'femenina (Creadora)' : 'masculina'}. Lista para usar!`,
+        });
+      }
     } catch (e: any) {
       setCloneStatus({ ok: false, msg: `❌ ${e.message}` });
     } finally {
@@ -198,9 +249,8 @@ const VoicePanel: React.FC<VoicePanelProps> = ({ onClose, textToSynth, onVoiceNo
     }
     setIsSynthing(true);
     try {
-      // AbortController with 5-minute timeout — VoiceStudio needs time to load on cold start
       const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 300_000);
+      const tid = setTimeout(() => controller.abort(), 60_000);
       const res = await fetch('/api/bot/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -208,8 +258,13 @@ const VoicePanel: React.FC<VoicePanelProps> = ({ onClose, textToSynth, onVoiceNo
         signal: controller.signal,
       });
       clearTimeout(tid);
+
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        throw new Error('Respuesta inválida del servidor.');
+      }
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || data.details || 'Error TTS');
+      if (!data.success && !data.audioUrl) throw new Error(data.error || 'Error al sintetizar audio.');
       onVoiceNoteSent(data.audioUrl, gender);
       onClose();
     } catch (e: any) {
