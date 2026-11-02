@@ -74,9 +74,9 @@ async function seed() {
     }
   }
 
-  console.log('Seeding vault...');
+  console.log('Seeding vault_items...');
   for (const v of INITIAL_VAULT) {
-    const { error } = await sb.from('vault').upsert({
+    const { error } = await sb.from('vault_items').upsert({
       id: v.id,
       title: v.title,
       description: v.description,
@@ -90,25 +90,23 @@ async function seed() {
       created_date: v.createdDate,
       is_unlocked: v.isUnlocked || false,
     });
-    if (error) console.error('Vault error:', v.id, error.message);
+    if (error) console.error('Vault item error:', v.id, error.message);
   }
 
-  console.log('Seeding bot rules...');
-  for (const r of INITIAL_BOT_RULES) {
+  console.log('Seeding bot_rules...');
+  for (let i = 0; i < INITIAL_BOT_RULES.length; i++) {
+    const r = INITIAL_BOT_RULES[i];
     const { error } = await sb.from('bot_rules').upsert({
       id: r.id,
       name: r.name,
-      description: r.description,
+      enabled: r.enabled ?? true,
       triggers: r.triggers,
-      action: r.action,
+      action_type: r.actionType,
       reply_content: r.replyContent,
-      priority: r.priority,
-      is_active: r.isActive,
-      match_mode: r.matchMode,
-      target_platforms: r.targetPlatforms,
-      target_tiers: r.targetTiers,
+      target_ppv_id: r.targetPpvId || null,
+      sort_order: i,
     });
-    if (error) console.error('Rule error:', r.id, error.message);
+    if (error) console.error('Bot rule error:', r.id, error.message);
   }
 
   console.log('Seeding FAQs...');
@@ -119,7 +117,7 @@ async function seed() {
       answer: f.answer,
       category: f.category,
       triggers: f.triggers,
-      usage_count: f.usageCount,
+      enabled: f.enabled ?? true,
     });
     if (error) console.error('FAQ error:', f.id, error.message);
   }
