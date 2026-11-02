@@ -79,10 +79,12 @@ app.get(['/api/threads', '/threads'], async (req: Request, res: Response) => {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
     const { data, count, error } = await db.from('threads').select('*', { count: 'exact' }).order('last_message_time', { ascending: false }).range(from, to);
-    if (!error && data) {
-      return res.json({ data, total: count || data.length, page, limit });
+    if (!error) {
+      // Return real data even if empty — never fall back to mock when DB is connected
+      return res.json({ data: data || [], total: count || 0, page, limit });
     }
   }
+  // Only use mock data when Supabase is NOT configured
   res.json({
     data: [
       { id: 'chat-1', fan_id: 'fan-1', fan_name: 'Carlos Mendoza', fan_handle: '@carlos_m', platform: 'whatsapp', attended_by: 'bot', last_message: '¡Hola amor! Te envié un preview...', last_message_time: '14:32', unread_count: 1, fan_tier: 'vip', total_spent: 380 },
@@ -121,8 +123,9 @@ app.post(['/api/threads/:id/messages', '/threads/:id/messages'], (req: Request, 
 app.get(['/api/fans', '/fans'], async (_req: Request, res: Response) => {
   if (db) {
     const { data, error } = await db.from('fans').select('*, purchase_records(*)');
-    if (!error && data) {
-      const mapped = data.map((f: any) => ({
+    if (!error) {
+      // Return real data even if empty — never fall back to mock when DB is connected
+      const mapped = (data || []).map((f: any) => ({
         id: f.id,
         name: f.name,
         handle: f.handle,
@@ -148,6 +151,7 @@ app.get(['/api/fans', '/fans'], async (_req: Request, res: Response) => {
       return res.json({ data: mapped, total: mapped.length, page: 1, limit: 100 });
     }
   }
+  // Only use mock data when Supabase is NOT configured
   res.json({
     data: [
       { id: 'fan-1', name: 'Carlos Mendoza', handle: '@carlos_m', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80', platform: 'whatsapp', tier: 'vip', totalSpent: 380, joinDate: '15 Sep 2026', lastActive: 'Hace 5 min', notes: 'Le gustan los sets en lencería de seda roja.', tags: ['lencería_roja', 'vip_whale'], preferences: ['Lencería', 'Videos largos'], purchasedItems: [{ id: 'p-1', vaultItemId: 'vault-1', itemTitle: 'Set Seda Roja 4K', amount: 45, date: '28 Oct 2026', platform: 'whatsapp', paymentMethod: 'PayPal' }] },

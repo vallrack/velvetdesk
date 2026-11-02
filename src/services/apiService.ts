@@ -153,7 +153,9 @@ export async function fetchThreads(page = 1, limit = 100): Promise<ChatThread[]>
     const raw = await apiFetch<{ data: any[]; total: number; page: number; limit: number }>(
       `/threads?page=${page}&limit=${limit}`
     );
-    if (!raw?.data || !Array.isArray(raw.data) || raw.data.length === 0) return memoryThreads;
+    // Only fall back to memory if the response itself is invalid (not an empty array)
+    if (!raw || !raw.data || !Array.isArray(raw.data)) return memoryThreads;
+    if (raw.data.length === 0) return []; // Respect empty result from server
     return raw.data.map((t) => ({
       id: t.id,
       fanId: t.fan_id || t.fanId,
@@ -266,7 +268,9 @@ export async function fetchFans(page = 1, limit = 100): Promise<FanProfile[]> {
     const raw = await apiFetch<{ data: FanProfile[]; total: number; page: number; limit: number }>(
       `/fans?page=${page}&limit=${limit}`
     );
-    if (!raw?.data || !Array.isArray(raw.data) || raw.data.length === 0) return memoryFans;
+    // Only fall back to memory if the response itself is invalid (not an empty array)
+    if (!raw || !raw.data || !Array.isArray(raw.data)) return memoryFans;
+    if (raw.data.length === 0) return []; // Respect empty result from server — all fans were deleted
     return raw.data;
   } catch (err) {
     console.warn('[API] Using fallback fans:', err);
