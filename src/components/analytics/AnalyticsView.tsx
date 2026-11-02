@@ -146,11 +146,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ channels }) => {
 
   useEffect(() => { loadSummary(); }, [timeRange]);
 
-  // ── Real data with sensible fallbacks for demo ──────────────────────────────
+  // ── Real data with sensible fallbacks when DB is empty ──────────────────────
   const totalRevenue: number = summary?.totalRevenue ?? 0;
   const totalFans: number = summary?.totalFans ?? 0;
   const totalUnread: number = summary?.totalUnread ?? 0;
   const vipCount: number = summary?.vipCount ?? 0;
+  const recurrenteCount: number = summary?.recurrenteCount ?? 0;
+  const botManagedPct: number = summary?.botManagedPct ?? 0;
 
   // Channel revenue breakdown from DB or demo fallback
   const rawChannels: any[] = summary?.channels ?? [];
@@ -175,16 +177,25 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ channels }) => {
   const displayTotal = totalRevenue > 0 ? totalRevenue : channelRevenues.reduce((a, c) => a + c.revenue, 0);
   const maxRev = channelRevenues[0]?.revenue ?? 1;
 
-  // Revenue trend data for area chart
-  const revenueTrendWeek = [820, 1340, 980, 2100, 1650, 3200, 2890];
+  // Revenue trend — real from API or demo fallback
+  const rawRevenueTrend: number[] = summary?.revenueTrend ?? [];
+  const rawMsgsTrend: number[] = summary?.messagesTrend ?? [];
+  const revenueTrendWeek = rawRevenueTrend.length === 7 && rawRevenueTrend.some(v => v > 0)
+    ? rawRevenueTrend
+    : [820, 1340, 980, 2100, 1650, 3200, 2890];
   const revenueTrendMonth = [8200, 11400, 9800, 14200];
   const trendData = timeRange === 'month' ? revenueTrendMonth : revenueTrendWeek;
   const trendLabels = timeRange === 'month' ? MONTH_LABELS : WEEK_LABELS;
 
-  // Bar chart: messages per day
+  // Bar chart: real messages/day or demo fallback
+  const msgsByDay = rawMsgsTrend.length === 7 && rawMsgsTrend.some(v => v > 0)
+    ? rawMsgsTrend
+    : [142, 198, 165, 287, 234, 312, 276];
   const msgBarData = trendLabels.map((label, i) => ({
     label,
-    value: [142, 198, 165, 287, 234, 312, 276][i] ?? 200,
+    value: timeRange === 'month'
+      ? [msgsByDay.slice(0,2).reduce((a,b)=>a+b,0), msgsByDay.slice(2,4).reduce((a,b)=>a+b,0), msgsByDay.slice(4,6).reduce((a,b)=>a+b,0), msgsByDay[6] ?? 200][i] ?? 200
+      : msgsByDay[i] ?? 0,
   }));
 
   // Retention cohorts
@@ -252,31 +263,30 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ channels }) => {
             sub="Sumatoria de todos los canales"
             color="#34d399"
             icon={DollarSign}
-            trend="+28.4%"
+            trend={totalRevenue > 0 ? undefined : '+28.4%'}
           />
           <KpiCard
             label="Fans Totales"
-            value={totalFans > 0 ? totalFans.toLocaleString() : '1,284'}
-            sub={`${vipCount > 0 ? vipCount : 87} fans VIP activos`}
+            value={totalFans > 0 ? totalFans.toLocaleString() : '—'}
+            sub={`${vipCount > 0 ? vipCount : '—'} VIP · ${recurrenteCount > 0 ? recurrenteCount : '—'} Recurrentes`}
             color="#a78bfa"
             icon={Users}
-            trend="+12.1%"
+            trend={totalFans > 0 ? undefined : '+12.1%'}
           />
           <KpiCard
             label="Bot vs Creadora"
-            value="79.2%"
+            value={botManagedPct > 0 ? `${botManagedPct}%` : '—'}
             sub="Mensajes manejados por bot"
             color="#f472b6"
             icon={Bot}
-            trend="+6.2%"
+            trend={botManagedPct > 0 ? undefined : '+6.2%'}
           />
           <KpiCard
-            label="Conversión PPV"
-            value="34.8%"
-            sub="PPVs ofrecidos → compra final"
+            label="No Leídos"
+            value={totalUnread > 0 ? totalUnread.toString() : '0'}
+            sub="Mensajes pendientes en bandeja"
             color="#fb923c"
-            icon={ShoppingBag}
-            trend="+4.5%"
+            icon={MessageCircle}
           />
         </div>
 

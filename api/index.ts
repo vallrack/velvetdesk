@@ -485,15 +485,106 @@ app.get(['/api/bot/audit-logs', '/bot/audit-logs'], (_req: Request, res: Respons
   ]);
 });
 
-app.get(['/api/analytics/summary', '/analytics/summary'], (_req: Request, res: Response) => {
-  res.json({
-    todayRevenue: 2160,
-    activeFans: 195,
-    unreadMessages: 19,
-    connectedChannels: 7,
-    ppvUnlockedCount: 48,
-    conversionRate: 34.2,
-  });
+app.get(['/api/analytics/summary', '/analytics/summary'], async (req: Request, res: Response) => {
+  if (!db) {
+    // Fallback when Supabase not configured
+    return res.json({
+      totalRevenue: 2160, totalFans: 195, vipCount: 87, recurrenteCount: 64,
+      curiosoCount: 44, totalUnread: 19, botManagedPct: 79.2,
+      channels: [], revenueTrend: [], messagesTrend: [],
+    });
+  }
+
+  try {
+    // Run all queries in parallel
+    const [
+      fansResult,
+      threadsResult,
+      unreadResult,
+      channelsResult,
+    ] = await Promise.all([
+      // Fan counts by tier
+      db.from('fans').select('tier'),
+      // Total revenue from threads (sum of total_spent)
+      db.from('threads').select('total_spent, platform, unread_count, attended_by'),
+      // Total unread
+      db.from('threads').select('unread_count').gt('unread_count', 0),
+      // Revenue per channel
+      db.from('threads').select('platform, total_spent'),
+    ]);
+
+    // Fan tier breakdown
+    const fans = fansResult.data || [];
+    const totalFans = fans.length;
+    const vipCount = fans.filter((f: any) => f.tier === 'vip').length;
+    const recurrenteCount = fans.filter((f: any) => f.tier === 'recurrente').length;
+    const curiosoCount = fans.filter((f: any) => f.tier === 'curioso').length;
+
+    // Revenue & unread from threads
+    const threads = threadsResult.data || [];
+    const totalRevenue = threads.reduce((sum: number, t: any) => sum + (Number(t.total_spent) || 0), 0);
+    const totalUnread = threads.reduce((sum: number, t: any) => sum + (Number(t.unread_count) || 0), 0);
+    const botThreads = threads.filter((t: any) => t.attended_by === 'bot').length;
+    const botManagedPct = threads.length > 0 ? Math.round((botThreads / threads.length) * 100 * 10) / 10 : 0;
+
+    // Revenue by platform/channel
+    const revenueByChannel: Record<string, number> = {};
+    (channelsResult.data || []).forEach((t: any) => {
+      if (t.platform) {
+        revenueByChannel[t.platform] = (revenueByChannel[t.platform] || 0) + (Number(t.total_spent) || 0);
+      }
+    });
+    const channelBreakdown = Object.entries(revenueByChannel).map(([platform, revenue]) => ({
+      id: platform,
+      today_revenue: revenue,
+    }));
+
+    // Messages trend: count messages grouped by day (last 7 days)
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentMsgs } = await db
+      .from('messages')
+      .select('created_at')
+      .gte('created_at', sevenDaysAgo);
+
+    const msgsByDay: number[] = Array(7).fill(0);
+    (recentMsgs || []).forEach((m: any) => {
+      if (!m.created_at) return;
+      const daysAgo = Math.floor((now.getTime() - new Date(m.created_at).getTime()) / (24 * 60 * 60 * 1000));
+      if (daysAgo >= 0 && daysAgo < 7) msgsByDay[6 - daysAgo]++;
+    });
+
+    // Revenue trend: approximate weekly buckets from total_spent per thread updated_at
+    const { data: threadHistory } = await db
+      .from('threads')
+      .select('total_spent, last_message_time')
+      .order('last_message_time', { ascending: false })
+      .limit(200);
+
+    // Simple: distribute total revenue across last 7 days proportionally to message activity
+    const totalMsgs = msgsByDay.reduce((a, b) => a + b, 1);
+    const revenueTrend = msgsByDay.map(m => Math.round((m / totalMsgs) * totalRevenue));
+
+    res.json({
+      totalRevenue,
+      totalFans,
+      vipCount,
+      recurrenteCount,
+      curiosoCount,
+      totalUnread,
+      botManagedPct,
+      channels: channelBreakdown,
+      revenueTrend,
+      messagesTrend: msgsByDay,
+    });
+  } catch (err: any) {
+    console.error('[Analytics] Error computing summary:', err.message);
+    res.json({
+      totalRevenue: 0, totalFans: 0, vipCount: 0, recurrenteCount: 0,
+      curiosoCount: 0, totalUnread: 0, botManagedPct: 0,
+      channels: [], revenueTrend: [], messagesTrend: [],
+    });
+  }
 });
 
 // ── Voice Studio & Audio Synthesis (Gemini 3.8 Flash TTS + Cloned Voices) ────
