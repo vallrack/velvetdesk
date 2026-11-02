@@ -387,12 +387,32 @@ export default function App() {
 
   const handleDeleteFan = useCallback(async (id: string) => {
     setFans(prev => prev.filter(f => f.id !== id));
+    // Also remove threads and messages belonging to this fan
+    setThreads(prev => {
+      const removed = prev.filter(t => t.fanId === id);
+      setMessagesMap(msgs => {
+        const next = { ...msgs };
+        removed.forEach(t => delete next[t.id]);
+        return next;
+      });
+      return prev.filter(t => t.fanId !== id);
+    });
     await api.deleteFan(id).catch(console.error);
   }, []);
 
   const handleDeleteFansBatch = useCallback(async (ids: string[]) => {
     const idSet = new Set(ids);
     setFans(prev => prev.filter(f => !idSet.has(f.id)));
+    // Also remove threads and messages belonging to deleted fans
+    setThreads(prev => {
+      const removed = prev.filter(t => idSet.has(t.fanId));
+      setMessagesMap(msgs => {
+        const next = { ...msgs };
+        removed.forEach(t => delete next[t.id]);
+        return next;
+      });
+      return prev.filter(t => !idSet.has(t.fanId));
+    });
     await api.deleteFansBatch(ids).catch(console.error);
   }, []);
 

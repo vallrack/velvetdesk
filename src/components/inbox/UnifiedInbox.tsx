@@ -57,6 +57,15 @@ export const UnifiedInbox: React.FC<UnifiedInboxProps> = ({
       setIsMobileViewingChat(true);
     }
   }, [selectedThreadId]);
+
+  // ── Guard: if active chat was deleted, fall back to first available thread ──
+  useEffect(() => {
+    if (activeChatId && !threads.find(t => t.id === activeChatId)) {
+      setActiveChatId(threads[0]?.id || '');
+      setIsMobileViewingChat(false);
+    }
+  }, [threads, activeChatId]);
+
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformId | 'all'>('all');
   const [isFanDrawerOpen, setIsFanDrawerOpen] = useState(false);
   const [isMobileViewingChat, setIsMobileViewingChat] = useState(false);
