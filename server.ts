@@ -555,8 +555,79 @@ async function startServer() {
       .eq('id', id)
       .select()
       .single();
-    if (error) return res.status(500).json({ error: error.message });
     res.json(data);
+  });
+
+  app.post('/api/fans', async (req, res) => {
+    const database = requireDb(res); if (!database) return;
+    const fan = req.body;
+    const newId = fan.id || `fan-${Date.now()}`;
+    const payload = {
+      id: newId,
+      name: fan.name || 'Nuevo Fan',
+      handle: fan.handle || `@fan_${Date.now().toString().slice(-4)}`,
+      avatar: fan.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(fan.name || 'Fan')}&background=8b5cf6&color=fff`,
+      platform: fan.platform || 'fansly',
+      tier: fan.tier || 'curioso',
+      total_spent: Number(fan.totalSpent || fan.total_spent) || 0,
+      join_date: fan.joinDate || fan.join_date || new Date().toISOString().split('T')[0],
+      last_active: fan.lastActive || fan.last_active || 'Reciente',
+      notes: fan.notes || '',
+      tags: fan.tags || [],
+      preferences: fan.preferences || [],
+      phone_or_username: fan.phoneOrUsername || fan.phone_or_username || '',
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await database.from('fans').insert(payload).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({
+      id: data.id,
+      name: data.name,
+      handle: data.handle,
+      avatar: data.avatar,
+      platform: data.platform,
+      tier: data.tier,
+      totalSpent: data.total_spent,
+      joinDate: data.join_date,
+      lastActive: data.last_active,
+      notes: data.notes,
+      tags: data.tags,
+      preferences: data.preferences,
+      phoneOrUsername: data.phone_or_username,
+      purchasedItems: [],
+    });
+  });
+
+  app.delete('/api/fans/:id', async (req, res) => {
+    const database = requireDb(res); if (!database) return;
+    const { id } = req.params;
+    const { error } = await database.from('fans').delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, id });
+  });
+
+  app.post('/api/fans/batch-delete', async (req, res) => {
+    const database = requireDb(res); if (!database) return;
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'IDs array requerido' });
+    const { error } = await database.from('fans').delete().in('id', ids);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, count: ids.length, ids });
+  });
+
+  app.post('/api/fans/batch-update', async (req, res) => {
+    const database = requireDb(res); if (!database) return;
+    const { ids, updates } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0 || !updates) return res.status(400).json({ error: 'IDs y updates requeridos' });
+    const payload: any = { updated_at: new Date().toISOString() };
+    if (updates.tier !== undefined) payload.tier = updates.tier;
+    if (updates.totalSpent !== undefined) payload.total_spent = updates.totalSpent;
+    if (updates.tags !== undefined) payload.tags = updates.tags;
+    if (updates.notes !== undefined) payload.notes = updates.notes;
+    const { error } = await database.from('fans').update(payload).in('id', ids);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, count: ids.length, ids, updates });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

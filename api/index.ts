@@ -159,8 +159,110 @@ app.get(['/api/fans', '/fans'], async (_req: Request, res: Response) => {
   });
 });
 
-app.patch(['/api/fans/:id', '/fans/:id'], (req: Request, res: Response) => {
-  res.json({ success: true, id: req.params.id, ...req.body });
+function mapFanToDb(fan: any) {
+  const payload: any = {};
+  if (fan.name !== undefined) payload.name = fan.name;
+  if (fan.handle !== undefined) payload.handle = fan.handle;
+  if (fan.avatar !== undefined) payload.avatar = fan.avatar;
+  if (fan.platform !== undefined) payload.platform = fan.platform;
+  if (fan.tier !== undefined) payload.tier = fan.tier;
+  if (fan.totalSpent !== undefined) payload.total_spent = fan.totalSpent;
+  if (fan.total_spent !== undefined) payload.total_spent = fan.total_spent;
+  if (fan.joinDate !== undefined) payload.join_date = fan.joinDate;
+  if (fan.lastActive !== undefined) payload.last_active = fan.lastActive;
+  if (fan.notes !== undefined) payload.notes = fan.notes;
+  if (fan.tags !== undefined) payload.tags = fan.tags;
+  if (fan.preferences !== undefined) payload.preferences = fan.preferences;
+  if (fan.phoneOrUsername !== undefined) payload.phone_or_username = fan.phoneOrUsername;
+  payload.updated_at = new Date().toISOString();
+  return payload;
+}
+
+app.post(['/api/fans', '/fans'], async (req: Request, res: Response) => {
+  const fan = req.body;
+  const newId = fan.id || `fan-${Date.now()}`;
+  const dbPayload = {
+    id: newId,
+    ...mapFanToDb(fan),
+    name: fan.name || 'Nuevo Fan',
+    platform: fan.platform || 'fansly',
+    tier: fan.tier || 'curioso',
+  };
+
+  if (db) {
+    const { error } = await db.from('fans').insert(dbPayload);
+    if (error) console.warn('[Supabase] Insert fan warning:', error.message);
+  }
+
+  res.json({
+    id: newId,
+    name: fan.name || 'Nuevo Fan',
+    handle: fan.handle || `@fan_${Date.now().toString().slice(-4)}`,
+    avatar: fan.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(fan.name || 'Fan')}&background=8b5cf6&color=fff`,
+    platform: fan.platform || 'fansly',
+    tier: fan.tier || 'curioso',
+    totalSpent: Number(fan.totalSpent) || 0,
+    joinDate: fan.joinDate || new Date().toISOString().split('T')[0],
+    lastActive: fan.lastActive || 'Reciente',
+    notes: fan.notes || '',
+    tags: fan.tags || [],
+    preferences: fan.preferences || [],
+    phoneOrUsername: fan.phoneOrUsername || '',
+    purchasedItems: [],
+  });
+});
+
+app.patch(['/api/fans/:id', '/fans/:id'], async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const dbPayload = mapFanToDb(req.body);
+
+  if (db) {
+    const { error } = await db.from('fans').update(dbPayload).eq('id', id);
+    if (error) console.warn('[Supabase] Update fan warning:', error.message);
+  }
+
+  res.json({ success: true, id, ...req.body });
+});
+
+app.delete(['/api/fans/:id', '/fans/:id'], async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  if (db) {
+    const { error } = await db.from('fans').delete().eq('id', id);
+    if (error) console.warn('[Supabase] Delete fan warning:', error.message);
+  }
+
+  res.json({ success: true, id });
+});
+
+app.post(['/api/fans/batch-delete', '/fans/batch-delete'], async (req: Request, res: Response) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'IDs array requerido' });
+  }
+
+  if (db) {
+    const { error } = await db.from('fans').delete().in('id', ids);
+    if (error) console.warn('[Supabase] Batch delete fans warning:', error.message);
+  }
+
+  res.json({ success: true, count: ids.length, ids });
+});
+
+app.post(['/api/fans/batch-update', '/fans/batch-update'], async (req: Request, res: Response) => {
+  const { ids, updates } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0 || !updates) {
+    return res.status(400).json({ error: 'IDs y updates requeridos' });
+  }
+
+  const dbPayload = mapFanToDb(updates);
+
+  if (db) {
+    const { error } = await db.from('fans').update(dbPayload).in('id', ids);
+    if (error) console.warn('[Supabase] Batch update fans warning:', error.message);
+  }
+
+  res.json({ success: true, count: ids.length, ids, updates });
 });
 
 // ── Vault ────────────────────────────────────────────────────────────────────

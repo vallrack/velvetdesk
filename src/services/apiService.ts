@@ -274,12 +274,82 @@ export async function fetchFans(page = 1, limit = 100): Promise<FanProfile[]> {
   }
 }
 
+export async function createFan(fan: Partial<FanProfile>): Promise<FanProfile> {
+  const newFan: FanProfile = {
+    id: fan.id || `fan-${Date.now()}`,
+    name: fan.name || 'Nuevo Fan',
+    handle: fan.handle || `@fan_${Date.now().toString().slice(-4)}`,
+    avatar: fan.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(fan.name || 'Fan')}&background=8b5cf6&color=fff`,
+    platform: fan.platform || 'fansly',
+    tier: fan.tier || 'curioso',
+    totalSpent: Number(fan.totalSpent) || 0,
+    joinDate: fan.joinDate || new Date().toISOString().split('T')[0],
+    lastActive: fan.lastActive || 'Reciente',
+    notes: fan.notes || '',
+    tags: fan.tags || [],
+    preferences: fan.preferences || [],
+    phoneOrUsername: fan.phoneOrUsername || '',
+    purchasedItems: [],
+  };
+
+  memoryFans.unshift(newFan);
+
+  try {
+    const res = await apiFetch<FanProfile>('/fans', {
+      method: 'POST',
+      body: JSON.stringify(fan),
+    });
+    return {
+      ...newFan,
+      ...res,
+    };
+  } catch (e) {
+    console.warn('[API] createFan fallback:', e);
+    return newFan;
+  }
+}
+
 export async function updateFan(id: string, updates: Partial<FanProfile>): Promise<void> {
   memoryFans = memoryFans.map((f) => (f.id === id ? { ...f, ...updates } : f));
   try {
     await apiFetch(`/fans/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
   } catch (e) {
     console.warn('[API] updateFan fallback:', e);
+  }
+}
+
+export async function deleteFan(id: string): Promise<void> {
+  memoryFans = memoryFans.filter((f) => f.id !== id);
+  try {
+    await apiFetch(`/fans/${id}`, { method: 'DELETE' });
+  } catch (e) {
+    console.warn('[API] deleteFan fallback:', e);
+  }
+}
+
+export async function deleteFansBatch(ids: string[]): Promise<void> {
+  const idSet = new Set(ids);
+  memoryFans = memoryFans.filter((f) => !idSet.has(f.id));
+  try {
+    await apiFetch('/fans/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  } catch (e) {
+    console.warn('[API] deleteFansBatch fallback:', e);
+  }
+}
+
+export async function updateFansBatch(ids: string[], updates: Partial<FanProfile>): Promise<void> {
+  const idSet = new Set(ids);
+  memoryFans = memoryFans.map((f) => (idSet.has(f.id) ? { ...f, ...updates } : f));
+  try {
+    await apiFetch('/fans/batch-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, updates }),
+    });
+  } catch (e) {
+    console.warn('[API] updateFansBatch fallback:', e);
   }
 }
 

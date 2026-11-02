@@ -367,11 +367,42 @@ export default function App() {
     await api.unlockPpv(messageId, chatId, amount, unlockedItem?.title || 'Contenido PPV').catch(console.error);
   }, [vaultItems]);
 
-  // ─── Update fan profile ───────────────────────────────────────────────────
+  // ─── Fan CRUD & Batch Operations (CRM) ──────────────────────────────────
+  const handleCreateFan = useCallback(async (fan: Partial<FanProfile>) => {
+    try {
+      const created = await api.createFan(fan);
+      setFans(prev => [created, ...prev]);
+      return created;
+    } catch (e) {
+      console.error('[App] Failed to create fan:', e);
+      throw e;
+    }
+  }, []);
+
   const handleUpdateFan = useCallback(async (updated: FanProfile) => {
     setFans(prev => prev.map(f => f.id === updated.id ? updated : f));
     setThreads(prev => prev.map(t => t.fanId === updated.id ? { ...t, fanTier: updated.tier } : t));
     await api.updateFan(updated.id, updated).catch(console.error);
+  }, []);
+
+  const handleDeleteFan = useCallback(async (id: string) => {
+    setFans(prev => prev.filter(f => f.id !== id));
+    await api.deleteFan(id).catch(console.error);
+  }, []);
+
+  const handleDeleteFansBatch = useCallback(async (ids: string[]) => {
+    const idSet = new Set(ids);
+    setFans(prev => prev.filter(f => !idSet.has(f.id)));
+    await api.deleteFansBatch(ids).catch(console.error);
+  }, []);
+
+  const handleUpdateFansBatch = useCallback(async (ids: string[], updates: Partial<FanProfile>) => {
+    const idSet = new Set(ids);
+    setFans(prev => prev.map(f => idSet.has(f.id) ? { ...f, ...updates } : f));
+    if (updates.tier) {
+      setThreads(prev => prev.map(t => idSet.has(t.fanId) ? { ...t, fanTier: updates.tier! } : t));
+    }
+    await api.updateFansBatch(ids, updates).catch(console.error);
   }, []);
 
   // ─── Vault operations ─────────────────────────────────────────────────────
@@ -687,6 +718,10 @@ export default function App() {
             <CrmView
               fans={fans}
               onUpdateFan={handleUpdateFan}
+              onCreateFan={handleCreateFan}
+              onDeleteFan={handleDeleteFan}
+              onDeleteFansBatch={handleDeleteFansBatch}
+              onUpdateFansBatch={handleUpdateFansBatch}
               onSelectChatForFan={(fanId) => {
                 const thread = threads.find(
                   (t) => t.fanId === fanId || t.fanName.toLowerCase() === fans.find((f) => f.id === fanId)?.name.toLowerCase()
