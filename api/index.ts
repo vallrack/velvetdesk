@@ -173,6 +173,168 @@ app.get(['/api/messages/search', '/messages/search'], async (req: Request, res: 
   res.json({ data: [] });
 });
 
+// ── Webhooks Hub (Ingestion & Verification for 7 Platforms) ───────────────────
+interface WebhookLog {
+  id: string;
+  platform: string;
+  timestamp: string;
+  sender: string;
+  textSnippet: string;
+  status: 'received' | 'processed' | 'error';
+  latencyMs: number;
+}
+
+const webhookLogs: WebhookLog[] = [];
+
+// 1. Handshake verification (WhatsApp hub.challenge, Telegram setup, etc.)
+app.get(['/api/webhooks/:platform', '/webhooks/:platform'], (req: Request, res: Response) => {
+  const { platform } = req.params;
+  const challenge = req.query['hub.challenge'];
+  if (challenge) {
+    return res.status(200).send(challenge);
+  }
+  res.json({
+    status: 'active',
+    platform,
+    endpoint: `/api/webhooks/${platform}`,
+    message: `VelvetDesk Webhook listener for ${platform} is ready to receive events.`,
+    instructions: 'Configure POST requests to this URL with event payload JSON.',
+  });
+});
+
+// 2. Incoming Webhook Receiver
+app.post(['/api/webhooks/:platform', '/webhooks/:platform'], async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const platform = String(req.params.platform).toLowerCase();
+  const body = req.body || {};
+
+  // Normalize incoming payload from various platform structures
+  const fanName = body.fanName || body.name || body.from_name || body.from?.first_name || body.sender?.name || 'Fan Anónimo';
+  const fanHandle = body.fanHandle || body.handle || body.username || (body.from?.username ? `@${body.from.username}` : `@${fanName.toLowerCase().replace(/\s+/g, '_')}`);
+  const text = body.text || body.message?.text || body.body || body.content || '';
+  const media = body.media || body.attachment || null;
+  const fanAvatar = body.avatar || body.fanAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(fanName)}&background=ec4899&color=fff`;
+  const fanTier = body.tier || body.fanTier || 'curioso';
+  const customChatId = body.chatId || body.chat_id || body.threadId;
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  let chatId = customChatId;
+  let fanId = body.fanId || `fan-${platform}-${Date.now()}`;
+
+  try {
+    if (db) {
+      // 1. Check if thread already exists for this handle and platform
+      const { data: existingThreads } = await db
+        .from('threads')
+        .select('*')
+        .eq('platform', platform)
+        .eq('fan_handle', fanHandle)
+        .limit(1);
+
+      if (existingThreads && existingThreads.length > 0) {
+        chatId = existingThreads[0].id;
+        fanId = existingThreads[0].fan_id;
+        // Update thread
+        await db.from('threads').update({
+          last_message: text || '(archivo multimedia)',
+          last_message_time: timeStr,
+          unread_count: (existingThreads[0].unread_count || 0) + 1,
+          is_online: true,
+        }).eq('id', chatId);
+      } else {
+        // Create new fan if not exists
+        chatId = chatId || `chat-${platform}-${Date.now()}`;
+        await db.from('fans').upsert({
+          id: fanId,
+          name: fanName,
+          handle: fanHandle,
+          avatar: fanAvatar,
+          platform,
+          tier: fanTier,
+          total_spent: 0,
+          join_date: now.toISOString().slice(0, 10),
+          last_active: 'En línea',
+          notes: `Ingresado automáticamente vía Webhook ${platform.toUpperCase()}`,
+          tags: [platform, fanTier],
+        });
+
+        // Insert new thread
+        await db.from('threads').insert({
+          id: chatId,
+          fan_id: fanId,
+          fan_name: fanName,
+          fan_handle: fanHandle,
+          fan_avatar: fanAvatar,
+          platform,
+          attended_by: 'bot',
+          last_message: text || '(archivo multimedia)',
+          last_message_time: timeStr,
+          unread_count: 1,
+          fan_tier: fanTier,
+          total_spent: 0,
+          is_online: true,
+        });
+      }
+
+      // 2. Insert message into Supabase
+      const messageId = `msg-wh-${Date.now()}`;
+      await db.from('messages').insert({
+        id: messageId,
+        chat_id: chatId,
+        sender: 'fan',
+        text: text || '',
+        timestamp: timeStr,
+        status: 'read',
+        media: media || null,
+      });
+    }
+
+    const latencyMs = Date.now() - startTime;
+    webhookLogs.unshift({
+      id: `wh-${Date.now()}`,
+      platform,
+      timestamp: timeStr,
+      sender: fanName,
+      textSnippet: (text || '(media)').slice(0, 60),
+      status: 'processed',
+      latencyMs,
+    });
+    if (webhookLogs.length > 50) webhookLogs.pop();
+
+    res.json({
+      success: true,
+      platform,
+      chatId,
+      fanId,
+      message: 'Webhook recibido y persistido en tiempo real en Supabase',
+      latencyMs,
+    });
+  } catch (err: any) {
+    console.error(`[Webhook ${platform}] Error:`, err);
+    webhookLogs.unshift({
+      id: `wh-${Date.now()}`,
+      platform,
+      timestamp: timeStr,
+      sender: fanName,
+      textSnippet: (text || '(error)').slice(0, 60),
+      status: 'error',
+      latencyMs: Date.now() - startTime,
+    });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Webhooks status and recent logs
+app.get(['/api/webhooks/logs', '/webhooks/logs'], (_req: Request, res: Response) => {
+  res.json({
+    totalLogs: webhookLogs.length,
+    recent: webhookLogs,
+    supportedPlatforms: ['fansly', 'telegram', 'whatsapp', 'manyvids', 'pornhub', 'scatbook', 'vipweb'],
+  });
+});
+
 // ── Fans ─────────────────────────────────────────────────────────────────────
 app.get(['/api/fans', '/fans'], async (_req: Request, res: Response) => {
   if (db) {

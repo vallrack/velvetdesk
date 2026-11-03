@@ -1,12 +1,23 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Sparkles,
   Bot,
   PlayCircle,
   Menu,
   LogOut,
+  Bell,
+  Volume2,
+  VolumeX,
+  Radio,
+  CheckCircle2,
+  MessageSquare,
+  DollarSign,
+  Lock,
+  Clock,
+  X,
 } from 'lucide-react';
-import { ChannelIntegration } from '../../types';
+import { ChannelIntegration, AppNotification, PlatformId } from '../../types';
+import { PlatformBadge } from '../common/PlatformBadge';
 import type { AuthUser } from '../../services/authService';
 
 interface NavbarProps {
@@ -19,6 +30,12 @@ interface NavbarProps {
   unreadCount: number;
   authUser?: AuthUser | null;
   onLogout?: () => void;
+  notifications?: AppNotification[];
+  onSelectNotification?: (notification: AppNotification) => void;
+  onClearNotifications?: () => void;
+  isSoundEnabled?: boolean;
+  onToggleSound?: () => void;
+  onOpenWebhooksModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -31,9 +48,31 @@ export const Navbar: React.FC<NavbarProps> = ({
   unreadCount,
   authUser,
   onLogout,
+  notifications = [],
+  onSelectNotification,
+  onClearNotifications,
+  isSoundEnabled = true,
+  onToggleSound,
+  onOpenWebhooksModal,
 }) => {
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setIsNotifOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+
   return (
-    <header className="h-16 border-b border-slate-800 bg-slate-950 px-3 sm:px-6 flex items-center justify-between shrink-0 z-30">
+    <header className="h-16 border-b border-slate-800 bg-slate-950 px-3 sm:px-6 flex items-center justify-between shrink-0 z-30 relative">
       {/* Brand & Status */}
       <div className="flex items-center gap-3 sm:gap-6">
         {/* Hamburger on mobile */}
@@ -79,6 +118,152 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Webhooks Monitor Quick Button */}
+        {onOpenWebhooksModal && (
+          <button
+            onClick={onOpenWebhooksModal}
+            className="p-2 sm:px-3 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-pink-500/40 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Ver Webhooks y eventos de canales"
+          >
+            <Radio className="w-4 h-4 text-pink-400" />
+            <span className="hidden md:inline">Webhooks</span>
+          </button>
+        )}
+
+        {/* Notification Bell Dropdown */}
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => setIsNotifOpen(!isNotifOpen)}
+            className={`p-2 rounded-xl border transition-all cursor-pointer relative ${
+              isNotifOpen
+                ? 'bg-pink-600 text-white border-pink-500'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-800'
+            }`}
+            title="Centro de Notificaciones en Vivo"
+          >
+            <Bell className="w-4 h-4" />
+            {(unreadCount > 0 || unreadNotifCount > 0) && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-pink-500 text-white text-[9px] font-bold flex items-center justify-center animate-pulse shadow-md shadow-pink-500/50">
+                {unreadNotifCount || unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Notifications Dropdown Menu */}
+          {isNotifOpen && (
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+              {/* Header */}
+              <div className="p-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-white text-xs flex items-center gap-1.5">
+                    <Bell className="w-3.5 h-3.5 text-pink-400" />
+                    Notificaciones en Vivo
+                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="Supabase Realtime activo" />
+                </div>
+                <div className="flex items-center gap-2">
+                  {onToggleSound && (
+                    <button
+                      onClick={onToggleSound}
+                      className={`p-1 rounded-lg text-xs cursor-pointer transition-colors ${
+                        isSoundEnabled ? 'text-pink-400 hover:text-pink-300' : 'text-slate-500 hover:text-slate-400'
+                      }`}
+                      title={isSoundEnabled ? 'Sonido activado (clic para silenciar)' : 'Sonido silenciado (clic para activar)'}
+                    >
+                      {isSoundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+                  {notifications.length > 0 && onClearNotifications && (
+                    <button
+                      onClick={onClearNotifications}
+                      className="text-[10px] text-slate-400 hover:text-pink-400 cursor-pointer"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Notifications List */}
+              <div className="max-h-80 overflow-y-auto divide-y divide-slate-800/60">
+                {notifications.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 text-xs space-y-1">
+                    <p className="font-semibold text-slate-400">Todo al día</p>
+                    <p className="text-[11px]">Los nuevos mensajes y eventos de webhooks aparecerán aquí en tiempo real.</p>
+                  </div>
+                ) : (
+                  notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() => {
+                        onSelectNotification?.(notif);
+                        setIsNotifOpen(false);
+                      }}
+                      className={`p-3 flex items-start gap-3 cursor-pointer transition-colors hover:bg-slate-800/50 ${
+                        !notif.read ? 'bg-slate-950/40' : ''
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center shrink-0 border border-slate-700 mt-0.5 overflow-hidden">
+                        {notif.fanAvatar ? (
+                          <img src={notif.fanAvatar} alt="" className="w-full h-full object-cover" />
+                        ) : notif.type === 'payment' ? (
+                          <DollarSign className="w-4 h-4 text-emerald-400" />
+                        ) : notif.type === 'ppv_unlock' ? (
+                          <Lock className="w-4 h-4 text-amber-400" />
+                        ) : notif.type === 'bot_reply' ? (
+                          <Bot className="w-4 h-4 text-pink-400" />
+                        ) : (
+                          <MessageSquare className="w-4 h-4 text-purple-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="font-semibold text-white text-xs truncate">
+                            {notif.title}
+                          </span>
+                          <span className="text-[9px] text-slate-500 font-mono shrink-0">
+                            {notif.timestamp}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 truncate">
+                          {notif.description}
+                        </p>
+                        {notif.platform && (
+                          <div className="mt-1">
+                            <PlatformBadge platform={notif.platform} size="sm" />
+                          </div>
+                        )}
+                      </div>
+                      {!notif.read && (
+                        <span className="w-2 h-2 rounded-full bg-pink-500 shrink-0 mt-1.5" />
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Dropdown Footer */}
+              <div className="p-2.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  Supabase Realtime
+                </span>
+                {onOpenWebhooksModal && (
+                  <button
+                    onClick={() => {
+                      setIsNotifOpen(false);
+                      onOpenWebhooksModal();
+                    }}
+                    className="text-pink-400 hover:text-pink-300 font-medium cursor-pointer"
+                  >
+                    Ver Webhooks →
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Simulate Incoming Message Button */}
         <button
           onClick={onOpenSimulateModal}
@@ -123,8 +308,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         {authUser && (
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                style={{ background: 'linear-gradient(135deg, #a855f7, #ec4899)' }}>
+              <div
+                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #a855f7, #ec4899)' }}
+              >
                 {authUser.email?.[0]?.toUpperCase() || '?'}
               </div>
               <span className="text-[11px] text-slate-300 font-mono max-w-[120px] truncate">
@@ -134,7 +321,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="navbar-logout-btn"
               onClick={onLogout}
-              className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-950/30 border border-slate-800 hover:border-red-500/30 transition-all"
+              className="p-2 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-950/30 border border-slate-800 hover:border-red-500/30 transition-all cursor-pointer"
               title="Cerrar sesión"
             >
               <LogOut className="w-4 h-4" />
@@ -145,3 +332,4 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
+

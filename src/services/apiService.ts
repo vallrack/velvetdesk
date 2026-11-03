@@ -522,3 +522,34 @@ export async function clearBotAuditLogs(): Promise<void> {
     console.warn('[API] clearBotAuditLogs fallback:', e);
   }
 }
+
+// ─── Webhooks API ─────────────────────────────────────────────────────────────
+export interface WebhookLogItem {
+  id: string;
+  platform: string;
+  timestamp: string;
+  sender: string;
+  textSnippet: string;
+  status: 'received' | 'processed' | 'error';
+  latencyMs: number;
+}
+
+export async function fetchWebhookLogs(): Promise<{ totalLogs: number; recent: WebhookLogItem[]; supportedPlatforms: string[] }> {
+  try {
+    return await apiFetch('/webhooks/logs');
+  } catch {
+    return {
+      totalLogs: 0,
+      recent: [],
+      supportedPlatforms: ['fansly', 'telegram', 'whatsapp', 'manyvids', 'pornhub', 'scatbook', 'vipweb'],
+    };
+  }
+}
+
+export async function sendTestWebhook(platform: string, payload: any): Promise<any> {
+  return await apiFetch(`/webhooks/${platform}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+

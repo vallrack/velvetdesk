@@ -181,3 +181,18 @@ export interface BotAuditLog {
   status: 'replied' | 'fallback' | 'rule_triggered' | 'error';
   ruleMatched?: string;
 }
+
+export interface AppNotification {
+  id: string;
+  type: 'message' | 'payment' | 'ppv_unlock' | 'webhook' | 'bot_reply';
+  title: string;
+  description: string;
+  timestamp: string;
+  platform?: PlatformId;
+  chatId?: string;
+  fanName?: string;
+  fanAvatar?: string;
+  read: boolean;
+  amount?: number;
+}
+

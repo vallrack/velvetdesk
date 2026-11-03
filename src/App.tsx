@@ -12,6 +12,9 @@ import { CrmView } from './components/crm/CrmView';
 import { AnalyticsView } from './components/analytics/AnalyticsView';
 import { ChannelsView } from './components/channels/ChannelsView';
 import { SimulateIncomingModal } from './components/inbox/SimulateIncomingModal';
+import { WebhooksMonitorModal } from './components/channels/WebhooksMonitorModal';
+import { playChimeSound } from './utils/soundAlert';
+import { X, MessageSquare } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import * as api from './services/apiService';
 import { requestBotReply } from './services/geminiService';
@@ -27,6 +30,7 @@ import type {
   PaymentGatewayConfig,
   PlatformId,
   FanTier,
+  AppNotification,
 } from './types';
 
 // ─── Default empty states (no mock data) ─────────────────────────────────────
@@ -61,6 +65,12 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // ─── Realtime & Notifications State ───────────────────────────────────────
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(true);
+  const [isWebhooksModalOpen, setIsWebhooksModalOpen] = useState<boolean>(false);
+  const [activeToastNotif, setActiveToastNotif] = useState<AppNotification | null>(null);
+
   // ─── Auth state ───────────────────────────────────────────────────────────
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -91,6 +101,23 @@ export default function App() {
       }
     }
   }
+
+  // ─── Realtime Toast Auto-Dismiss ──────────────────────────────────────────
+  useEffect(() => {
+    if (activeToastNotif) {
+      const timer = setTimeout(() => setActiveToastNotif(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeToastNotif]);
+
+  const handleSelectNotification = useCallback((notif: AppNotification) => {
+    if (notif.chatId) {
+      setSelectedThreadId(notif.chatId);
+      setCurrentView('inbox');
+    }
+    setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, read: true } : n));
+    setActiveToastNotif(null);
+  }, []);
 
   // ─── Auth bootstrap on mount ─────────────────────────────────────────────
   useEffect(() => {
@@ -195,18 +222,40 @@ export default function App() {
           return { ...prev, [msg.chat_id]: [...existing, newMessage] };
         });
 
-        // 🔔 Web Push Notification when a FAN sends a message and tab is hidden
+        // 🔔 Web Push, In-App Toast & Audio Chime when a FAN sends a message
         if (msg.sender === 'fan') {
+          if (isSoundEnabled) {
+            playChimeSound();
+          }
+
           setThreads(current => {
             const t = current.find(th => th.id === msg.chat_id);
             const fanName = t?.fanName || 'Fan';
             const avatar = t?.fanAvatar;
+            const platform = t?.platform;
+
+            const notif: AppNotification = {
+              id: `notif-${Date.now()}`,
+              type: 'message',
+              title: `Nuevo mensaje de ${fanName}`,
+              description: msg.text || '(archivo multimedia)',
+              timestamp: msg.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              platform,
+              chatId: msg.chat_id,
+              fanName,
+              fanAvatar: avatar,
+              read: false,
+            };
+
+            setNotifications(prev => [notif, ...prev.slice(0, 29)]);
+            setActiveToastNotif(notif);
+
             sendPushNotification(
               `💬 Nuevo mensaje de ${fanName}`,
               msg.text || '(media)',
               avatar,
             );
-            return current; // no state change, just reading
+            return current;
           });
         }
       })
@@ -546,6 +595,24 @@ export default function App() {
     };
     setMessagesMap(prev => ({ ...prev, [chatId!]: [...(prev[chatId!] || []), fanMsg] }));
 
+    if (isSoundEnabled) {
+      playChimeSound();
+    }
+    const notif: AppNotification = {
+      id: `notif-sim-${Date.now()}`,
+      type: 'message',
+      title: `Nuevo mensaje de ${params.fanName}`,
+      description: params.text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      platform: params.platform,
+      chatId: chatId!,
+      fanName: params.fanName,
+      fanAvatar: newFan?.avatar || existingThread?.fanAvatar,
+      read: false,
+    };
+    setNotifications(prev => [notif, ...prev.slice(0, 29)]);
+    setActiveToastNotif(notif);
+
     if (params.triggerBotReply && isGlobalBotActive && existingThread.attendedBy === 'bot') {
       setTimeout(async () => {
         try {
@@ -675,6 +742,12 @@ export default function App() {
         unreadCount={totalUnread}
         authUser={authUser}
         onLogout={handleLogout}
+        notifications={notifications}
+        onSelectNotification={handleSelectNotification}
+        onClearNotifications={() => setNotifications([])}
+        isSoundEnabled={isSoundEnabled}
+        onToggleSound={() => setIsSoundEnabled(!isSoundEnabled)}
+        onOpenWebhooksModal={() => setIsWebhooksModalOpen(true)}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -761,6 +834,7 @@ export default function App() {
               channels={channels}
               onUpdateChannelCredentials={handleUpdateChannelCredentials}
               onDisconnectChannel={handleDisconnectChannel}
+              onOpenWebhooks={() => setIsWebhooksModalOpen(true)}
               onRefreshChannel={async (id) => {
                 await api.refreshChannel(id as PlatformId);
                 const updated = await api.fetchChannels();
@@ -782,6 +856,57 @@ export default function App() {
         isOpen={isSimulateModalOpen}
         onClose={() => setIsSimulateModalOpen(false)}
         onSimulateMessage={handleSimulateIncoming}
+      />
+
+      {/* Floating In-App Toast Notification */}
+      {activeToastNotif && (
+        <div
+          onClick={() => handleSelectNotification(activeToastNotif)}
+          className="fixed top-20 right-4 sm:right-6 z-50 bg-slate-900/95 border border-pink-500/50 rounded-2xl p-3 sm:p-4 shadow-2xl shadow-pink-500/20 max-w-sm flex items-start gap-3 cursor-pointer backdrop-blur-md animate-in slide-in-from-top-3 hover:bg-slate-800 transition-all select-none"
+        >
+          <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 overflow-hidden shrink-0">
+            {activeToastNotif.fanAvatar ? (
+              <img src={activeToastNotif.fanAvatar} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <MessageSquare className="w-5 h-5 text-pink-400 m-2.5" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="font-bold text-white text-xs truncate">
+                {activeToastNotif.title}
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                {activeToastNotif.timestamp}
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 truncate">
+              {activeToastNotif.description}
+            </p>
+            <span className="text-[10px] text-pink-400 font-semibold inline-block mt-1">
+              Abrir conversación →
+            </span>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveToastNotif(null);
+            }}
+            className="text-slate-400 hover:text-white p-1 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Webhooks Monitor Modal */}
+      <WebhooksMonitorModal
+        isOpen={isWebhooksModalOpen}
+        onClose={() => setIsWebhooksModalOpen(false)}
+        onWebhookTested={async () => {
+          const freshThreads = await api.fetchThreads();
+          setThreads(freshThreads.data);
+        }}
       />
     </div>
   );

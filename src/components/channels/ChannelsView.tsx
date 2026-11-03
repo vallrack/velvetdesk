@@ -33,6 +33,7 @@ interface ChannelsViewProps {
     }
   ) => void;
   onDisconnectChannel?: (channelId: PlatformId) => Promise<void>;
+  onOpenWebhooks?: () => void;
 }
 
 export const ChannelsView: React.FC<ChannelsViewProps> = ({
@@ -40,6 +41,7 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
   onRefreshChannel,
   onUpdateChannelCredentials,
   onDisconnectChannel,
+  onOpenWebhooks,
 }) => {
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [authModalChannel, setAuthModalChannel] = useState<ChannelIntegration | null>(null);
@@ -79,6 +81,16 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
               <LogIn className="w-4 h-4" />
               <span>Vincular / Iniciar Sesión</span>
             </button>
+
+            {onOpenWebhooks && (
+              <button
+                onClick={onOpenWebhooks}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-pink-500/50 text-slate-200 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <Radio className="w-4 h-4 text-pink-400" />
+                <span>Monitor de Webhooks</span>
+              </button>
+            )}
 
             <div className="hidden md:flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 rounded-xl text-xs text-emerald-300 font-semibold">
               <Wifi className="w-4 h-4 text-emerald-400" />
