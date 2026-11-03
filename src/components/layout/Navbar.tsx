@@ -109,8 +109,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-mono text-slate-300"
               title={`${ch.name}: ${ch.status}`}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>{ch.name}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${ch.status === 'connected' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+              <span className={ch.status === 'connected' ? 'text-slate-200' : 'text-slate-500'}>{ch.name}</span>
             </div>
           ))}
         </div>
