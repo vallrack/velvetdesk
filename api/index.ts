@@ -677,84 +677,222 @@ app.get(['/api/bot/audit-logs', '/bot/audit-logs'], (_req: Request, res: Respons
 });
 
 app.get(['/api/analytics/summary', '/analytics/summary'], async (req: Request, res: Response) => {
+  const range = (req.query.range as string) || 'week';
+
   if (!db) {
-    // Fallback when Supabase not configured
+    const emptyTrend = range === 'today' ? [0, 0, 0, 0, 0, 0] : range === 'month' ? [0, 0, 0, 0] : [0, 0, 0, 0, 0, 0, 0];
     return res.json({
-      totalRevenue: 2160, totalFans: 195, vipCount: 87, recurrenteCount: 64,
-      curiosoCount: 44, totalUnread: 19, botManagedPct: 79.2,
-      channels: [], revenueTrend: [], messagesTrend: [],
+      totalRevenue: 0, totalFans: 0, vipCount: 0, recurrenteCount: 0,
+      curiosoCount: 0, totalUnread: 0, botManagedPct: 0,
+      channels: [], revenueTrend: emptyTrend, messagesTrend: emptyTrend,
+      ppvFunnel: { suggested: 0, viewed: 0, purchased: 0, conversionRate: 0 },
+      responseSpeed: { botAvgSeconds: null, botSamples: 0, creatorAvgMinutes: null, creatorSamples: 0 },
+      retentionCohorts: [],
     });
   }
 
   try {
-    // Run all queries in parallel
+    // 1. Parallel fetch of all primary tables from Supabase
     const [
       fansResult,
       threadsResult,
-      unreadResult,
       channelsResult,
+      purchasesResult,
+      messagesResult,
     ] = await Promise.all([
-      // Fan counts by tier
-      db.from('fans').select('tier'),
-      // Total revenue from threads (sum of total_spent)
-      db.from('threads').select('total_spent, platform, unread_count, attended_by'),
-      // Total unread
-      db.from('threads').select('unread_count').gt('unread_count', 0),
-      // Revenue per channel
-      db.from('threads').select('platform, total_spent'),
+      db.from('fans').select('id, platform, tier, total_spent, join_date'),
+      db.from('threads').select('id, platform, unread_count, attended_by, total_spent, last_message_time'),
+      db.from('channels').select('id, name, color, status, today_revenue, active_chats_count'),
+      db.from('purchase_records').select('id, fan_id, amount, platform, date, created_at'),
+      db.from('messages').select('id, chat_id, sender, media, status, created_at').order('created_at', { ascending: true }),
     ]);
 
-    // Fan tier breakdown
     const fans = fansResult.data || [];
+    const threads = threadsResult.data || [];
+    const channels = channelsResult.data || [];
+    const purchases = purchasesResult.data || [];
+    const messages = messagesResult.data || [];
+
+    // Fan counts
     const totalFans = fans.length;
     const vipCount = fans.filter((f: any) => f.tier === 'vip').length;
     const recurrenteCount = fans.filter((f: any) => f.tier === 'recurrente').length;
     const curiosoCount = fans.filter((f: any) => f.tier === 'curioso').length;
 
-    // Revenue & unread from threads
-    const threads = threadsResult.data || [];
-    const totalRevenue = threads.reduce((sum: number, t: any) => sum + (Number(t.total_spent) || 0), 0);
+    // Threads & unread
     const totalUnread = threads.reduce((sum: number, t: any) => sum + (Number(t.unread_count) || 0), 0);
     const botThreads = threads.filter((t: any) => t.attended_by === 'bot').length;
     const botManagedPct = threads.length > 0 ? Math.round((botThreads / threads.length) * 100 * 10) / 10 : 0;
 
-    // Revenue by platform/channel
-    const revenueByChannel: Record<string, number> = {};
-    (channelsResult.data || []).forEach((t: any) => {
-      if (t.platform) {
-        revenueByChannel[t.platform] = (revenueByChannel[t.platform] || 0) + (Number(t.total_spent) || 0);
+    // Total Revenue calculation from real database
+    const purchasesTotal = purchases.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+    const threadsTotal = threads.reduce((sum: number, t: any) => sum + (Number(t.total_spent) || 0), 0);
+    const channelsTodayTotal = channels.reduce((sum: number, c: any) => sum + (Number(c.today_revenue) || 0), 0);
+    const totalRevenue = Math.max(purchasesTotal, threadsTotal, channelsTodayTotal);
+
+    // Revenue per channel
+    const channelBreakdown = channels.map((ch: any) => {
+      const fromPurchases = purchases
+        .filter((p: any) => p.platform?.toLowerCase() === ch.id?.toLowerCase())
+        .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+      const fromThreads = threads
+        .filter((t: any) => t.platform?.toLowerCase() === ch.id?.toLowerCase())
+        .reduce((sum: number, t: any) => sum + (Number(t.total_spent) || 0), 0);
+      const chRev = Math.max(Number(ch.today_revenue) || 0, fromPurchases, fromThreads);
+      return {
+        id: ch.id,
+        name: ch.name || ch.id,
+        color: ch.color || '#a855f7',
+        status: ch.status || 'disconnected',
+        today_revenue: chRev,
+        active_chats_count: ch.active_chats_count || 0,
+      };
+    });
+
+    // PPV Funnel metrics
+    let ppvSuggested = 0;
+    let ppvViewed = 0;
+    let ppvPurchased = purchases.length;
+
+    messages.forEach((m: any) => {
+      const media = m.media;
+      if (media && (media.isPpv === true || Number(media.ppvPrice) > 0 || Number(media.price) > 0)) {
+        ppvSuggested++;
+        if (m.status === 'delivered' || m.status === 'read' || media.isViewed === true) {
+          ppvViewed++;
+        }
+        if (media.isUnlocked === true) {
+          ppvPurchased++;
+        }
       }
     });
-    const channelBreakdown = Object.entries(revenueByChannel).map(([platform, revenue]) => ({
-      id: platform,
-      today_revenue: revenue,
-    }));
 
-    // Messages trend: count messages grouped by day (last 7 days)
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: recentMsgs } = await db
-      .from('messages')
-      .select('created_at')
-      .gte('created_at', sevenDaysAgo);
+    const ppvFunnel = {
+      suggested: ppvSuggested,
+      viewed: ppvViewed,
+      purchased: ppvPurchased,
+      conversionRate: ppvSuggested > 0 ? Math.round((ppvPurchased / ppvSuggested) * 100 * 10) / 10 : 0,
+    };
 
-    const msgsByDay: number[] = Array(7).fill(0);
-    (recentMsgs || []).forEach((m: any) => {
-      if (!m.created_at) return;
-      const daysAgo = Math.floor((now.getTime() - new Date(m.created_at).getTime()) / (24 * 60 * 60 * 1000));
-      if (daysAgo >= 0 && daysAgo < 7) msgsByDay[6 - daysAgo]++;
+    // Response times calculation
+    const botLatenciesMs: number[] = [];
+    const creatorLatenciesMs: number[] = [];
+    const msgsByChat: Record<string, any[]> = {};
+
+    messages.forEach((m: any) => {
+      if (!m.chat_id) return;
+      if (!msgsByChat[m.chat_id]) msgsByChat[m.chat_id] = [];
+      msgsByChat[m.chat_id].push(m);
     });
 
-    // Revenue trend: approximate weekly buckets from total_spent per thread updated_at
-    const { data: threadHistory } = await db
-      .from('threads')
-      .select('total_spent, last_message_time')
-      .order('last_message_time', { ascending: false })
-      .limit(200);
+    Object.values(msgsByChat).forEach(chatMsgs => {
+      for (let i = 0; i < chatMsgs.length - 1; i++) {
+        const curr = chatMsgs[i];
+        const next = chatMsgs[i + 1];
+        if (curr.sender === 'fan' && curr.created_at && next.created_at) {
+          const deltaMs = new Date(next.created_at).getTime() - new Date(curr.created_at).getTime();
+          if (deltaMs > 0 && deltaMs < 24 * 60 * 60 * 1000) {
+            if (next.sender === 'bot') botLatenciesMs.push(deltaMs);
+            if (next.sender === 'creator') creatorLatenciesMs.push(deltaMs);
+          }
+        }
+      }
+    });
 
-    // Simple: distribute total revenue across last 7 days proportionally to message activity
-    const totalMsgs = msgsByDay.reduce((a, b) => a + b, 1);
-    const revenueTrend = msgsByDay.map(m => Math.round((m / totalMsgs) * totalRevenue));
+    const botAvgSeconds = botLatenciesMs.length > 0
+      ? Math.round((botLatenciesMs.reduce((a, b) => a + b, 0) / botLatenciesMs.length / 1000) * 10) / 10
+      : null;
+    const creatorAvgMinutes = creatorLatenciesMs.length > 0
+      ? Math.round((creatorLatenciesMs.reduce((a, b) => a + b, 0) / creatorLatenciesMs.length / 60000) * 10) / 10
+      : null;
+
+    const responseSpeed = {
+      botAvgSeconds,
+      botSamples: botLatenciesMs.length,
+      creatorAvgMinutes,
+      creatorSamples: creatorLatenciesMs.length,
+    };
+
+    // Trends bucketing based on range
+    const now = new Date();
+    let msgsTrend: number[] = [];
+    let revTrend: number[] = [];
+
+    if (range === 'today') {
+      msgsTrend = Array(6).fill(0);
+      revTrend = Array(6).fill(0);
+      const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
+
+      messages.forEach((m: any) => {
+        if (!m.created_at) return;
+        const t = new Date(m.created_at).getTime();
+        if (t >= oneDayAgo && t <= now.getTime()) {
+          const hoursAgo = (now.getTime() - t) / (60 * 60 * 1000);
+          const slot = Math.min(5, Math.max(0, 5 - Math.floor(hoursAgo / 4)));
+          msgsTrend[slot]++;
+        }
+      });
+
+      purchases.forEach((p: any) => {
+        const d = p.created_at || p.date;
+        if (!d) return;
+        const t = new Date(d).getTime();
+        if (t >= oneDayAgo && t <= now.getTime()) {
+          const hoursAgo = (now.getTime() - t) / (60 * 60 * 1000);
+          const slot = Math.min(5, Math.max(0, 5 - Math.floor(hoursAgo / 4)));
+          revTrend[slot] += Number(p.amount) || 0;
+        }
+      });
+    } else if (range === 'month') {
+      msgsTrend = Array(4).fill(0);
+      revTrend = Array(4).fill(0);
+      const fourWeeksAgo = now.getTime() - 28 * 24 * 60 * 60 * 1000;
+
+      messages.forEach((m: any) => {
+        if (!m.created_at) return;
+        const t = new Date(m.created_at).getTime();
+        if (t >= fourWeeksAgo && t <= now.getTime()) {
+          const daysAgo = (now.getTime() - t) / (24 * 60 * 60 * 1000);
+          const weekSlot = Math.min(3, Math.max(0, 3 - Math.floor(daysAgo / 7)));
+          msgsTrend[weekSlot]++;
+        }
+      });
+
+      purchases.forEach((p: any) => {
+        const d = p.created_at || p.date;
+        if (!d) return;
+        const t = new Date(d).getTime();
+        if (t >= fourWeeksAgo && t <= now.getTime()) {
+          const daysAgo = (now.getTime() - t) / (24 * 60 * 60 * 1000);
+          const weekSlot = Math.min(3, Math.max(0, 3 - Math.floor(daysAgo / 7)));
+          revTrend[weekSlot] += Number(p.amount) || 0;
+        }
+      });
+    } else {
+      // Default: 'week' (7 days)
+      msgsTrend = Array(7).fill(0);
+      revTrend = Array(7).fill(0);
+      const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+
+      messages.forEach((m: any) => {
+        if (!m.created_at) return;
+        const t = new Date(m.created_at).getTime();
+        if (t >= sevenDaysAgo && t <= now.getTime()) {
+          const daysAgo = Math.floor((now.getTime() - t) / (24 * 60 * 60 * 1000));
+          if (daysAgo >= 0 && daysAgo < 7) msgsTrend[6 - daysAgo]++;
+        }
+      });
+
+      purchases.forEach((p: any) => {
+        const d = p.created_at || p.date;
+        if (!d) return;
+        const t = new Date(d).getTime();
+        if (t >= sevenDaysAgo && t <= now.getTime()) {
+          const daysAgo = Math.floor((now.getTime() - t) / (24 * 60 * 60 * 1000));
+          if (daysAgo >= 0 && daysAgo < 7) revTrend[6 - daysAgo] += Number(p.amount) || 0;
+        }
+      });
+    }
 
     res.json({
       totalRevenue,
@@ -765,15 +903,22 @@ app.get(['/api/analytics/summary', '/analytics/summary'], async (req: Request, r
       totalUnread,
       botManagedPct,
       channels: channelBreakdown,
-      revenueTrend,
-      messagesTrend: msgsByDay,
+      revenueTrend: revTrend,
+      messagesTrend: msgsTrend,
+      ppvFunnel,
+      responseSpeed,
+      retentionCohorts: [],
     });
   } catch (err: any) {
     console.error('[Analytics] Error computing summary:', err.message);
+    const emptyTrend = range === 'today' ? [0, 0, 0, 0, 0, 0] : range === 'month' ? [0, 0, 0, 0] : [0, 0, 0, 0, 0, 0, 0];
     res.json({
       totalRevenue: 0, totalFans: 0, vipCount: 0, recurrenteCount: 0,
       curiosoCount: 0, totalUnread: 0, botManagedPct: 0,
-      channels: [], revenueTrend: [], messagesTrend: [],
+      channels: [], revenueTrend: emptyTrend, messagesTrend: emptyTrend,
+      ppvFunnel: { suggested: 0, viewed: 0, purchased: 0, conversionRate: 0 },
+      responseSpeed: { botAvgSeconds: null, botSamples: 0, creatorAvgMinutes: null, creatorSamples: 0 },
+      retentionCohorts: [],
     });
   }
 });
