@@ -76,20 +76,20 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export async function fetchChannels(): Promise<ChannelIntegration[]> {
   try {
     const raw = await apiFetch<any[]>('/channels');
-    if (!raw || !Array.isArray(raw) || raw.length === 0) return INITIAL_CHANNELS;
+    if (!raw || !Array.isArray(raw)) return INITIAL_CHANNELS;
     return raw.map((c) => ({
       id: c.id as PlatformId,
       name: c.name,
       iconName: c.icon_name || c.iconName,
       color: c.color,
       bgColor: c.bg_color || c.bgColor,
-      status: c.status,
+      status: c.status || 'disconnected',
       syncType: c.sync_type || c.syncType,
       activeChatsCount: c.active_chats_count ?? c.activeChatsCount ?? 0,
       unreadTotal: c.unread_total ?? c.unreadTotal ?? 0,
       todayRevenue: c.today_revenue ?? c.todayRevenue ?? 0,
       latencyMs: c.latency_ms ?? c.latencyMs ?? 100,
-      lastSyncTime: c.last_sync_time || c.lastSyncTime || 'En tiempo real',
+      lastSyncTime: c.last_sync_time || c.lastSyncTime || 'Nunca',
       credentialInfo: c.credential_info || c.credentialInfo || '',
       authMethod: c.auth_method || c.authMethod,
       accountUsername: c.account_username || c.accountUsername,
@@ -135,7 +135,7 @@ export async function fetchWhatsAppQR(): Promise<{ status: string; qr: string | 
   try {
     return await apiFetch('/channels/whatsapp/qr');
   } catch {
-    return { status: 'qr_ready', qr: null, username: '+1 555-0192' };
+    return { status: 'disconnected', qr: null };
   }
 }
 
@@ -361,7 +361,7 @@ export async function updateFansBatch(ids: string[], updates: Partial<FanProfile
 export async function fetchVault(): Promise<VaultItem[]> {
   try {
     const raw = await apiFetch<VaultItem[]>('/vault');
-    if (!raw || !Array.isArray(raw) || raw.length === 0) return memoryVault;
+    if (!raw || !Array.isArray(raw)) return memoryVault;
     return raw;
   } catch (err) {
     console.warn('[API] Using fallback vault:', err);
@@ -495,23 +495,7 @@ export async function fetchBotAuditLogs(): Promise<BotAuditLog[]> {
   try {
     return await apiFetch<BotAuditLog[]>('/bot/audit-logs');
   } catch {
-    return [
-      {
-        id: 'seed-vercel-1',
-        timestamp: new Date().toISOString(),
-        fanName: 'Carlos M.',
-        fanTier: 'vip',
-        platform: 'whatsapp',
-        incomingText: 'Hola amor, tienes fotos en la ducha?',
-        botReply: '¡Hola cariño! 💕 Claro que sí, tengo un set exclusivo en la bóveda por $35 USD 🔥',
-        intent: 'BUY_PPV',
-        suggestedPpvId: 'vault-01',
-        isVoice: true,
-        latencyMs: 1250,
-        modelUsed: 'gemini-1.5-flash + VoiceStudio',
-        status: 'replied',
-      },
-    ];
+    return [];
   }
 }
 
@@ -552,4 +536,26 @@ export async function sendTestWebhook(platform: string, payload: any): Promise<a
     body: JSON.stringify(payload),
   });
 }
+
+// ─── Payments & Transactions ──────────────────────────────────────────────────
+export interface PaymentTransactionItem {
+  id: string;
+  fanName: string;
+  platform: string;
+  method: string;
+  amount: number;
+  item: string;
+  status: string;
+  time: string;
+  unlocked: boolean;
+}
+
+export async function fetchPaymentsTransactions(): Promise<PaymentTransactionItem[]> {
+  try {
+    return await apiFetch<PaymentTransactionItem[]>('/payments/transactions');
+  } catch {
+    return [];
+  }
+}
+
 

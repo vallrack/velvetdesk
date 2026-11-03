@@ -39,20 +39,52 @@ app.get(['/api/health', '/health'], (_req: Request, res: Response) => {
 });
 
 // ── Channels ─────────────────────────────────────────────────────────────────
+const DEFAULT_CHANNELS = [
+  { id: 'fansly', name: 'Fansly', icon_name: 'Flame', color: '#00aff0', bg_color: 'rgba(0,175,240,0.15)', status: 'disconnected', sync_type: 'api', latency_ms: 85, last_sync_time: 'Nunca' },
+  { id: 'telegram', name: 'Telegram', icon_name: 'Send', color: '#229ed9', bg_color: 'rgba(34,158,217,0.15)', status: 'disconnected', sync_type: 'bot_token', latency_ms: 120, last_sync_time: 'Nunca' },
+  { id: 'whatsapp', name: 'WhatsApp', icon_name: 'MessageCircle', color: '#25d366', bg_color: 'rgba(37,211,102,0.15)', status: 'disconnected', sync_type: 'qr', latency_ms: 95, last_sync_time: 'Nunca' },
+  { id: 'manyvids', name: 'ManyVids', icon_name: 'Film', color: '#e91e63', bg_color: 'rgba(233,30,99,0.15)', status: 'disconnected', sync_type: 'session_cookie', latency_ms: 140, last_sync_time: 'Nunca' },
+  { id: 'pornhub', name: 'Pornhub', icon_name: 'Video', color: '#ff9900', bg_color: 'rgba(255,153,0,0.15)', status: 'disconnected', sync_type: 'session_cookie', latency_ms: 160, last_sync_time: 'Nunca' },
+  { id: 'scatbook', name: 'Scatbook', icon_name: 'BookOpen', color: '#8b5cf6', bg_color: 'rgba(139,92,246,0.15)', status: 'disconnected', sync_type: 'api', latency_ms: 110, last_sync_time: 'Nunca' },
+  { id: 'vipweb', name: 'VIPweb', icon_name: 'Globe', color: '#ec4899', bg_color: 'rgba(236,72,153,0.15)', status: 'disconnected', sync_type: 'api', latency_ms: 105, last_sync_time: 'Nunca' },
+];
+
 app.get(['/api/channels', '/channels'], async (_req: Request, res: Response) => {
   if (db) {
-    const { data, error } = await db.from('channels').select('*').order('name');
-    if (!error && data) return res.json(data);
+    try {
+      const [chRes, thRes, purRes] = await Promise.all([
+        db.from('channels').select('*'),
+        db.from('threads').select('platform, unread_count, total_spent'),
+        db.from('purchase_records').select('platform, amount'),
+      ]);
+      const dbChannels = chRes.data || [];
+      const threads = thRes.data || [];
+      const purchases = purRes.data || [];
+
+      const base = dbChannels.length > 0 ? dbChannels : DEFAULT_CHANNELS;
+      const enriched = base.map((ch: any) => {
+        const chId = ch.id?.toLowerCase();
+        const chThreads = threads.filter((t: any) => t.platform?.toLowerCase() === chId);
+        const chPurchases = purchases.filter((p: any) => p.platform?.toLowerCase() === chId);
+        const activeChats = chThreads.length;
+        const unreadTotal = chThreads.reduce((s: number, t: any) => s + (Number(t.unread_count) || 0), 0);
+        const purRev = chPurchases.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+        const thRev = chThreads.reduce((s: number, t: any) => s + (Number(t.total_spent) || 0), 0);
+        const todayRev = Math.max(purRev, thRev, Number(ch.today_revenue) || 0);
+
+        return {
+          ...ch,
+          active_chats_count: activeChats,
+          unread_total: unreadTotal,
+          today_revenue: todayRev,
+        };
+      });
+      return res.json(enriched);
+    } catch (e) {
+      console.warn('[Channels] DB query failed, returning clean default:', e);
+    }
   }
-  res.json([
-    { id: 'fansly', name: 'Fansly', icon_name: 'Flame', color: '#00aff0', bg_color: 'rgba(0,175,240,0.15)', status: 'connected', active_chats_count: 42, unread_total: 4, today_revenue: 480 },
-    { id: 'telegram', name: 'Telegram', icon_name: 'Send', color: '#229ed9', bg_color: 'rgba(34,158,217,0.15)', status: 'connected', active_chats_count: 68, unread_total: 7, today_revenue: 620 },
-    { id: 'whatsapp', name: 'WhatsApp', icon_name: 'MessageCircle', color: '#25d366', bg_color: 'rgba(37,211,102,0.15)', status: 'connected', active_chats_count: 31, unread_total: 3, today_revenue: 290 },
-    { id: 'manyvids', name: 'ManyVids', icon_name: 'Film', color: '#e91e63', bg_color: 'rgba(233,30,99,0.15)', status: 'connected', active_chats_count: 19, unread_total: 2, today_revenue: 345 },
-    { id: 'pornhub', name: 'Pornhub', icon_name: 'Video', color: '#ff9900', bg_color: 'rgba(255,153,0,0.15)', status: 'connected', active_chats_count: 15, unread_total: 1, today_revenue: 180 },
-    { id: 'scatbook', name: 'Scatbook', icon_name: 'BookOpen', color: '#8b5cf6', bg_color: 'rgba(139,92,246,0.15)', status: 'connected', active_chats_count: 8, unread_total: 0, today_revenue: 95 },
-    { id: 'vipweb', name: 'VIPweb', icon_name: 'Globe', color: '#ec4899', bg_color: 'rgba(236,72,153,0.15)', status: 'connected', active_chats_count: 12, unread_total: 2, today_revenue: 150 },
-  ]);
+  res.json(DEFAULT_CHANNELS.map(c => ({ ...c, active_chats_count: 0, unread_total: 0, today_revenue: 0 })));
 });
 
 app.patch(['/api/channels/:id/credentials', '/channels/:id/credentials'], (req: Request, res: Response) => {
@@ -64,7 +96,7 @@ app.post(['/api/channels/:id/refresh', '/channels/:id/refresh'], (_req: Request,
 });
 
 app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], (_req: Request, res: Response) => {
-  res.json({ status: 'connected', qr: null, username: '+1 555-0192' });
+  res.json({ status: 'disconnected', qr: null });
 });
 
 app.post(['/api/channels/:id/disconnect', '/channels/:id/disconnect'], (_req: Request, res: Response) => {
@@ -73,28 +105,18 @@ app.post(['/api/channels/:id/disconnect', '/channels/:id/disconnect'], (_req: Re
 
 // ── Threads ──────────────────────────────────────────────────────────────────
 app.get(['/api/threads', '/threads'], async (req: Request, res: Response) => {
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 50;
   if (db) {
-    const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 50;
     const from = (page - 1) * limit;
     const to = from + limit - 1;
     const { data, count, error } = await db.from('threads').select('*', { count: 'exact' }).order('last_message_time', { ascending: false }).range(from, to);
     if (!error) {
-      // Return real data even if empty — never fall back to mock when DB is connected
       return res.json({ data: data || [], total: count || 0, page, limit });
     }
   }
-  // Only use mock data when Supabase is NOT configured
-  res.json({
-    data: [
-      { id: 'chat-1', fan_id: 'fan-1', fan_name: 'Carlos Mendoza', fan_handle: '@carlos_m', platform: 'whatsapp', attended_by: 'bot', last_message: '¡Hola amor! Te envié un preview...', last_message_time: '14:32', unread_count: 1, fan_tier: 'vip', total_spent: 380 },
-      { id: 'chat-2', fan_id: 'fan-2', fan_name: 'Alex R.', fan_handle: '@alex99', platform: 'fansly', attended_by: 'creator', last_message: 'Ya hice la transferencia por Wise!', last_message_time: '14:20', unread_count: 0, fan_tier: 'recurrente', total_spent: 175 },
-      { id: 'chat-3', fan_id: 'fan-3', fan_name: 'David Wolf', fan_handle: '@wolf_d', platform: 'telegram', attended_by: 'bot', last_message: '¿Cuándo subes nuevo video?', last_message_time: '13:45', unread_count: 2, fan_tier: 'curioso', total_spent: 45 },
-    ],
-    total: 3,
-    page: 1,
-    limit: 50,
-  });
+  // Clean empty state when empty or offline
+  res.json({ data: [], total: 0, page, limit });
 });
 
 app.get(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Request, res: Response) => {
@@ -114,11 +136,7 @@ app.get(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Requ
       })));
     }
   }
-  // Mock only when Supabase not configured
-  res.json([
-    { id: 'm-1', chatId: id, sender: 'fan', text: 'Hola hermosa, qué tienes nuevo hoy?', timestamp: '14:30', status: 'read' },
-    { id: 'm-2', chatId: id, sender: 'bot', text: '¡Hola amor! 💕 Acabo de subir un set en la ducha espectacular por $35 USD 🔥', timestamp: '14:31', status: 'delivered' },
-  ]);
+  res.json([]);
 });
 
 app.post(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Request, res: Response) => {
@@ -367,16 +385,8 @@ app.get(['/api/fans', '/fans'], async (_req: Request, res: Response) => {
       return res.json({ data: mapped, total: mapped.length, page: 1, limit: 100 });
     }
   }
-  // Only use mock data when Supabase is NOT configured
-  res.json({
-    data: [
-      { id: 'fan-1', name: 'Carlos Mendoza', handle: '@carlos_m', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80', platform: 'whatsapp', tier: 'vip', totalSpent: 380, joinDate: '15 Sep 2026', lastActive: 'Hace 5 min', notes: 'Le gustan los sets en lencería de seda roja.', tags: ['lencería_roja', 'vip_whale'], preferences: ['Lencería', 'Videos largos'], purchasedItems: [{ id: 'p-1', vaultItemId: 'vault-1', itemTitle: 'Set Seda Roja 4K', amount: 45, date: '28 Oct 2026', platform: 'whatsapp', paymentMethod: 'PayPal' }] },
-      { id: 'fan-2', name: 'Alex R.', handle: '@alex99', avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=120&auto=format&fit=crop&q=80', platform: 'fansly', tier: 'recurrente', totalSpent: 175, joinDate: '02 Oct 2026', lastActive: 'Hace 20 min', notes: 'Paga puntual por Wise.', tags: ['comprador_activo'], preferences: ['Customs'], purchasedItems: [] },
-    ],
-    total: 2,
-    page: 1,
-    limit: 100,
-  });
+  // Clean empty state when empty or offline
+  res.json({ data: [], total: 0, page: 1, limit: 100 });
 });
 
 function mapFanToDb(fan: any) {
@@ -520,11 +530,8 @@ app.get(['/api/vault', '/vault'], async (_req: Request, res: Response) => {
       return res.json(mapped);
     }
   }
-  // Mock only when Supabase not configured
-  res.json([
-    { id: 'vault-1', title: 'Set Ducha & Seda Roja 4K', description: 'Video exclusivo grabado en alta definición con lencería de seda.', type: 'video', url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&auto=format&fit=crop&q=80', thumbnailUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300&auto=format&fit=crop&q=80', tags: ['Lencería', 'Video Largo', 'Exclusivo'], price: 35, duration: '08:42', createdDate: '28 Oct 2026' },
-    { id: 'vault-2', title: 'Audio Buenas Noches Personalizado', description: 'Nota de voz sugerente susurrada con voz clonada.', type: 'audio', url: '/audio/demo.mp3', thumbnailUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80', tags: ['Audio Personalizado'], price: 20, duration: '02:15', createdDate: '29 Oct 2026' },
-  ]);
+  // Clean empty state when empty or offline
+  res.json([]);
 });
 
 app.post(['/api/vault', '/vault'], async (req: Request, res: Response) => {
@@ -656,24 +663,36 @@ app.put(['/api/gateways', '/gateways'], async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-app.get(['/api/bot/audit-logs', '/bot/audit-logs'], (_req: Request, res: Response) => {
-  res.json([
-    {
-      id: 'log-seed-1',
-      timestamp: new Date().toISOString(),
-      fanName: 'Carlos M.',
-      fanTier: 'vip',
-      platform: 'whatsapp',
-      incomingText: 'Hola hermosa, me envías el set en la ducha?',
-      botReply: '¡Hola amor! 💕 Claro que sí, lo tengo recién salido en la bóveda por $35 USD. ¿Te lo envío ya mismo? 🔥',
-      intent: 'BUY_PPV',
-      suggestedPpvId: 'vault-1',
-      isVoice: true,
-      latencyMs: 1420,
-      modelUsed: 'gemini-3.8-flash + VoiceStudio',
-      status: 'replied',
-    },
-  ]);
+app.get(['/api/bot/audit-logs', '/bot/audit-logs'], async (_req: Request, res: Response) => {
+  const stored = await getSetting('bot_audit_logs');
+  if (stored && Array.isArray(stored)) return res.json(stored);
+  res.json([]);
+});
+
+app.delete(['/api/bot/audit-logs', '/bot/audit-logs'], async (_req: Request, res: Response) => {
+  await setSetting('bot_audit_logs', []);
+  res.json({ success: true });
+});
+
+// ── Payments Transactions ───────────────────────────────────────────────────
+app.get(['/api/payments/transactions', '/payments/transactions'], async (_req: Request, res: Response) => {
+  if (db) {
+    const { data, error } = await db.from('purchase_records').select('*').order('created_at', { ascending: false }).limit(50);
+    if (!error && data) {
+      return res.json(data.map((p: any) => ({
+        id: p.id,
+        fanName: p.item_title ? `Comprador (${p.platform || 'Directo'})` : 'Fan',
+        platform: p.platform || 'Directo',
+        method: p.payment_method || 'Pasarela',
+        amount: Number(p.amount) || 0,
+        item: p.item_title || 'Contenido Exclusivo',
+        status: 'confirmed',
+        time: p.date || (p.created_at ? new Date(p.created_at).toLocaleDateString() : 'Reciente'),
+        unlocked: true,
+      })));
+    }
+  }
+  res.json([]);
 });
 
 app.get(['/api/analytics/summary', '/analytics/summary'], async (req: Request, res: Response) => {

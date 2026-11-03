@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CreditCard,
   CheckCircle2,
@@ -14,6 +14,7 @@ import {
   Send,
 } from 'lucide-react';
 import { PaymentGatewayConfig } from '../../types';
+import { fetchPaymentsTransactions, type PaymentTransactionItem } from '../../services/apiService';
 
 interface PaymentsViewProps {
   gateways: PaymentGatewayConfig[];
@@ -26,54 +27,23 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showQrFor, setShowQrFor] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<PaymentTransactionItem[]>([]);
+  const [loadingTx, setLoadingTx] = useState<boolean>(true);
 
-  // Recent simulated transactions
-  const [transactions, setTransactions] = useState([
-    {
-      id: 'tx-9941',
-      fanName: 'Carlos Mendoza',
-      platform: 'WhatsApp',
-      method: 'Crypto USDT (TRC20)',
-      amount: 45.0,
-      item: 'Video Privado Ducha (14 min)',
-      status: 'confirmed',
-      time: 'Hace 8 min',
-      unlocked: true,
-    },
-    {
-      id: 'tx-9940',
-      fanName: 'Alexander V.',
-      platform: 'Telegram',
-      method: 'Wise Transfer',
-      amount: 45.0,
-      item: 'Video Privado Ducha (14 min)',
-      status: 'confirmed',
-      time: 'Hace 24 min',
-      unlocked: true,
-    },
-    {
-      id: 'tx-9939',
-      fanName: 'Maxime Dupont',
-      platform: 'Fansly',
-      method: 'Fansly Wallet (Nativo)',
-      amount: 90.0,
-      item: 'Mega Pack VIP Fin de Semana',
-      status: 'confirmed',
-      time: 'Hace 1 hora',
-      unlocked: true,
-    },
-    {
-      id: 'tx-9938',
-      fanName: 'Diego Morales',
-      platform: 'ManyVids',
-      method: 'ManyVids Native PPV',
-      amount: 20.0,
-      item: 'Teaser Corto',
-      status: 'confirmed',
-      time: 'Ayer',
-      unlocked: true,
-    },
-  ]);
+  useEffect(() => {
+    let isMounted = true;
+    fetchPaymentsTransactions()
+      .then((data) => {
+        if (isMounted) setTransactions(data || []);
+      })
+      .catch((e) => console.warn('[Payments] Error fetching transactions:', e))
+      .finally(() => {
+        if (isMounted) setLoadingTx(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleToggleGateway = (id: string) => {
     const updated = gateways.map((g) => (g.id === id ? { ...g, enabled: !g.enabled } : g));
@@ -229,40 +199,55 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950/70 border-b border-slate-800 text-slate-400 font-mono">
-                <tr>
-                  <th className="p-3.5">Cliente</th>
-                  <th className="p-3.5">Canal</th>
-                  <th className="p-3.5">Método</th>
-                  <th className="p-3.5">Contenido Liberado</th>
-                  <th className="p-3.5">Monto</th>
-                  <th className="p-3.5">Estado</th>
-                  <th className="p-3.5">Tiempo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {transactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="p-3.5 font-medium text-white">{tx.fanName}</td>
-                    <td className="p-3.5 font-mono text-slate-400">{tx.platform}</td>
-                    <td className="p-3.5 text-slate-300">{tx.method}</td>
-                    <td className="p-3.5 text-slate-200">{tx.item}</td>
-                    <td className="p-3.5 font-mono font-bold text-emerald-400">
-                      ${tx.amount.toFixed(2)} USD
-                    </td>
-                    <td className="p-3.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                        <CheckCircle2 className="w-3 h-3" /> LIBERADO
-                      </span>
-                    </td>
-                    <td className="p-3.5 text-slate-500 font-mono text-[11px]">{tx.time}</td>
+          {loadingTx ? (
+            <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl">
+              <RefreshCw className="w-6 h-6 text-emerald-400 animate-spin mx-auto mb-2" />
+              <p className="text-xs text-slate-400">Cargando transacciones de Supabase...</p>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl">
+              <CheckCircle2 className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-300">Sin pagos registrados todavía</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                Las compras de PPV y pagos validados en cualquiera de las 7 plataformas aparecerán aquí en tiempo real.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950/70 border-b border-slate-800 text-slate-400 font-mono">
+                  <tr>
+                    <th className="p-3.5">Cliente</th>
+                    <th className="p-3.5">Canal</th>
+                    <th className="p-3.5">Método</th>
+                    <th className="p-3.5">Contenido Liberado</th>
+                    <th className="p-3.5">Monto</th>
+                    <th className="p-3.5">Estado</th>
+                    <th className="p-3.5">Tiempo</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {transactions.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="p-3.5 font-medium text-white">{tx.fanName}</td>
+                      <td className="p-3.5 font-mono text-slate-400">{tx.platform}</td>
+                      <td className="p-3.5 text-slate-300">{tx.method}</td>
+                      <td className="p-3.5 text-slate-200">{tx.item}</td>
+                      <td className="p-3.5 font-mono font-bold text-emerald-400">
+                        ${tx.amount.toFixed(2)} USD
+                      </td>
+                      <td className="p-3.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <CheckCircle2 className="w-3 h-3" /> LIBERADO
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-slate-500 font-mono text-[11px]">{tx.time}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

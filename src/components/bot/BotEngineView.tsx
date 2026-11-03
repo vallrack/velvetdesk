@@ -102,16 +102,10 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
   const [showAddFaq, setShowAddFaq] = useState(false);
 
   // Live Test Playground state
-  const [testInput, setTestInput] = useState('Hola preciosa, cuánto cuesta tu video en la ducha?');
+  const [testInput, setTestInput] = useState('');
   const [testResponses, setTestResponses] = useState<
     { sender: 'user' | 'bot'; text: string; intent?: string }[]
-  >([
-    { sender: 'user', text: 'Hola hermosa, qué tienes de nuevo hoy?' },
-    {
-      sender: 'bot',
-      text: '¡Hola amor! 💕 Acabo de subir a mi bóveda un video súper caliente en la ducha y un set de lencería de seda roja. ¿Te gustaría que te envíe los detalles y precios? 🔥',
-    },
-  ]);
+  >([]);
   const [isTesting, setIsTesting] = useState(false);
 
   const handleSavePersona = () => {
@@ -200,7 +194,7 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
 
     try {
       const res = await requestBotReply({
-        fanName: 'Carlos (Fan VIP)',
+        fanName: 'Fan de Prueba',
         fanTier: 'vip',
         platform: 'whatsapp',
         persona: currentPersona,
@@ -219,12 +213,12 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
         ...prev,
         { sender: 'bot', text: res.reply, intent: res.intent },
       ]);
-    } catch (err) {
+    } catch (err: any) {
       setTestResponses((prev) => [
         ...prev,
         {
           sender: 'bot',
-          text: 'Hola corazón ❤️ Claro que sí, el video de la ducha son $45 USD. ¿Por dónde te gustaría pagarlo para liberártelo de inmediato? 🔥',
+          text: err?.message || 'Error al conectar con el motor de IA. Verifica tu configuración.',
         },
       ]);
     } finally {
@@ -833,30 +827,40 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
 
             {/* Chat Box */}
             <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 min-h-[350px] max-h-[480px] overflow-y-auto space-y-3">
-              {testResponses.map((r, i) => (
-                <div
-                  key={i}
-                  className={`flex flex-col ${r.sender === 'user' ? 'items-end' : 'items-start'}`}
-                >
-                  <span className="text-[10px] text-slate-500 mb-1 px-1">
-                    {r.sender === 'user' ? 'Fan (Tú)' : '🤖 VelvetBot'}
-                  </span>
-                  <div
-                    className={`max-w-md rounded-2xl p-3 text-xs leading-relaxed ${
-                      r.sender === 'user'
-                        ? 'bg-slate-800 text-white rounded-tr-sm'
-                        : 'bg-gradient-to-br from-pink-950/80 to-purple-950/80 border border-pink-500/30 text-pink-100 rounded-tl-sm'
-                    }`}
-                  >
-                    {r.text}
-                    {r.intent && (
-                      <span className="block mt-1 text-[9px] uppercase font-mono text-pink-400 font-bold">
-                        Intención: {r.intent}
-                      </span>
-                    )}
-                  </div>
+              {testResponses.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                  <Bot className="w-8 h-8 text-slate-600 mb-2" />
+                  <p className="text-xs font-medium text-slate-400">Sandbox de prueba listo</p>
+                  <p className="text-[11px] text-slate-500 mt-1 max-w-sm">
+                    Escribe un mensaje abajo simulando ser un fan para probar en vivo cómo responderá tu bot según tu personalidad y catálogo.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                testResponses.map((r, i) => (
+                  <div
+                    key={i}
+                    className={`flex flex-col ${r.sender === 'user' ? 'items-end' : 'items-start'}`}
+                  >
+                    <span className="text-[10px] text-slate-500 mb-1 px-1">
+                      {r.sender === 'user' ? 'Fan (Tú)' : '🤖 VelvetBot'}
+                    </span>
+                    <div
+                      className={`max-w-md rounded-2xl p-3 text-xs leading-relaxed ${
+                        r.sender === 'user'
+                          ? 'bg-slate-800 text-white rounded-tr-sm'
+                          : 'bg-gradient-to-br from-pink-950/80 to-purple-950/80 border border-pink-500/30 text-pink-100 rounded-tl-sm'
+                      }`}
+                    >
+                      {r.text}
+                      {r.intent && (
+                        <span className="block mt-1 text-[9px] uppercase font-mono text-pink-400 font-bold">
+                          Intención: {r.intent}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
               {isTesting && (
                 <div className="flex items-center gap-2 text-xs text-pink-400">
                   <Sparkles className="w-3.5 h-3.5 animate-spin" />

@@ -80,54 +80,7 @@ export interface BotAuditLog {
   ruleMatched?: string;
 }
 
-const auditLogs: BotAuditLog[] = [
-  {
-    id: 'log-seed-1',
-    timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    fanName: 'Carlos M.',
-    fanTier: 'vip',
-    platform: 'whatsapp',
-    incomingText: 'Hola hermosa, me envías el set en la ducha?',
-    botReply: '¡Hola amor! 💕 Claro que sí, lo tengo recién salido en la bóveda por $35 USD. ¿Te lo envío ya mismo? 🔥',
-    intent: 'BUY_PPV',
-    suggestedPpvId: 'vault-01',
-    isVoice: true,
-    latencyMs: 1420,
-    modelUsed: 'gemini-1.5-flash + VoiceStudio',
-    status: 'replied',
-  },
-  {
-    id: 'log-seed-2',
-    timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    fanName: 'Alex_99',
-    fanTier: 'recurrente',
-    platform: 'fansly',
-    incomingText: 'Aceptas pagos por Crypto o Wise?',
-    botReply: '¡Hola cariño! Sí, acepto USDT (TRC-20) y Wise directamente. Puedes ver los detalles en la pasarela o te paso la wallet aquí ✨',
-    intent: 'FAQ',
-    suggestedPpvId: null,
-    isVoice: false,
-    latencyMs: 980,
-    modelUsed: 'gemini-1.5-flash',
-    status: 'rule_triggered',
-    ruleMatched: 'Pregunta de métodos de pago',
-  },
-  {
-    id: 'log-seed-3',
-    timestamp: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
-    fanName: 'Diego R.',
-    fanTier: 'curioso',
-    platform: 'telegram',
-    incomingText: 'Buenas noches, haces contenido personalizado?',
-    botReply: '¡Hola Diego! Sí hago customs exclusivos con tu nombre y lo que desees. El mínimo son 3 minutos, cuéntame qué fantasía tienes en mente 💋',
-    intent: 'CUSTOM_REQUEST',
-    suggestedPpvId: null,
-    isVoice: false,
-    latencyMs: 1120,
-    modelUsed: 'gemini-1.5-flash',
-    status: 'replied',
-  },
-];
+const auditLogs: BotAuditLog[] = [];
 const MAX_AUDIT_LOGS = 200;
 
 export function addBotAuditLog(log: Omit<BotAuditLog, 'id' | 'timestamp'>): BotAuditLog {

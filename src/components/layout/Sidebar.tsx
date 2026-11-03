@@ -149,8 +149,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className="w-9 h-9 rounded-full object-cover border border-pink-500/40"
           />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-white truncate">Velvet Goddess</p>
-            <p className="text-[10px] text-emerald-400 font-mono">● 7 Canales Activos</p>
+            <p className={`text-[10px] font-mono ${channelsCount > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+              ● {channelsCount} {channelsCount === 1 ? 'Canal Conectado' : 'Canales Conectados'}
+            </p>
           </div>
         </div>
       </div>
