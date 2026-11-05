@@ -70,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'channels' as MainView,
       label: 'Canales Conectados',
-      sublabel: 'Fansly, WA, TG, MV...',
+      sublabel: 'OnlyFans, WA, Fansly...',
       icon: Radio,
       badge: `${channelsCount}`,
     },

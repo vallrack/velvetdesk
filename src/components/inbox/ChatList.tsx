@@ -68,6 +68,7 @@ export const ChatList: React.FC<ChatListProps> = ({
 
   const platforms: { id: PlatformId | 'all'; label: string }[] = [
     { id: 'all', label: 'Todos' },
+    { id: 'onlyfans', label: 'OnlyFans' },
     { id: 'fansly', label: 'Fansly' },
     { id: 'telegram', label: 'Telegram' },
     { id: 'manyvids', label: 'ManyVids' },

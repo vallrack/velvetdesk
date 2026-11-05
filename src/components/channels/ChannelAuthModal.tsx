@@ -146,6 +146,8 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
         credInfo = waPhone || '+1 (305) 555-0199';
       } else if (activePlatform === 'telegram') {
         credInfo = usernameOrEmail || (apiToken ? `Bot: ${apiToken.substring(0, 10)}...` : '@VelvetGoddess_bot');
+      } else if (activePlatform === 'onlyfans') {
+        credInfo = usernameOrEmail ? `@${usernameOrEmail.replace('@', '')}` : (sessionCookie || apiToken ? `Token: ${(sessionCookie || apiToken).substring(0, 10)}...` : '@velvet_onlyfans');
       } else if (activePlatform === 'fansly') {
         credInfo = apiToken ? `Token: ${apiToken.substring(0, 10)}...` : `Token: fan_live_${Math.random().toString(36).substring(2, 7)}...`;
       } else {
@@ -154,7 +156,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
 
       onSaveCredentials(activePlatform, {
         credentialInfo: credInfo,
-        accountUsername: usernameOrEmail || '@velvet_creator',
+        accountUsername: activePlatform === 'whatsapp' ? (waPhone || '+1 (305) 555-0199') : (usernameOrEmail || '@velvet_creator'),
         status: 'connected',
         apiKeyOrToken: apiToken || undefined,
         sessionCookie: sessionCookie || (activePlatform === 'manyvids' || activePlatform === 'pornhub' ? password : undefined),
@@ -196,7 +198,8 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
   const handleDisconnect = handleSecurityDisconnect;
 
   const handleCopyWebhook = () => {
-    navigator.clipboard.writeText(`https://velvetdesk.app/api/webhooks/${activePlatform}`);
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://velvetdesk.app';
+    navigator.clipboard.writeText(`${origin}/api/webhooks/${activePlatform}`);
     setCopiedWebhook(true);
     setTimeout(() => setCopiedWebhook(false), 2000);
   };
@@ -341,6 +344,15 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                       <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" />
                       <span>Se actualiza en {qrCounter}s</span>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleTestAndConnect}
+                      className="mt-3 w-full py-2 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Confirmar Vinculación WhatsApp</span>
+                    </button>
                   </div>
 
                   {/* Instructions */}
@@ -390,6 +402,15 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     Introduce este código en la notificación de WhatsApp que aparecerá en tu teléfono para autorizar la conexión.
                   </p>
+
+                  <button
+                    type="button"
+                    onClick={handleTestAndConnect}
+                    className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Vincular WhatsApp con este Teléfono</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -429,6 +450,64 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
 
               <div className="p-3 bg-sky-950/20 border border-sky-500/20 rounded-xl text-xs text-sky-200">
                 ℹ️ Los mensajes de fans en Telegram se recibirán instantáneamente vía MTProto Webhook con latencia menor a 100ms.
+              </div>
+            </div>
+          )}
+
+          {/* ONLYFANS API / SESSION TOKEN & WEBHOOK */}
+          {activePlatform === 'onlyfans' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  OnlyFans Session Cookie ('sess' / 'auth_id') o API Token
+                </label>
+                <input
+                  type="password"
+                  placeholder="sess=abc123xyz... o of_token_..."
+                  value={sessionCookie || apiToken}
+                  onChange={(e) => {
+                    setSessionCookie(e.target.value);
+                    setApiToken(e.target.value);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 font-mono"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Obtén tu cookie 'sess' o auth_id desde la consola del navegador (F12 &gt; Application &gt; Cookies &gt; onlyfans.com) o tu token de API de creadora.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Usuario Oficial de OnlyFans
+                </label>
+                <input
+                  type="text"
+                  placeholder="@velvet_creator"
+                  value={usernameOrEmail}
+                  onChange={(e) => setUsernameOrEmail(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              {/* Webhook Endpoint for OnlyFans */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-300">URL de Webhook para OnlyFans</label>
+                  <button
+                    type="button"
+                    onClick={handleCopyWebhook}
+                    className="text-[11px] text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedWebhook ? <CheckCircle2 className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    {copiedWebhook ? 'Copiado' : 'Copiar URL'}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  readOnly
+                  value={`${typeof window !== 'undefined' ? window.location.origin : 'https://velvetdesk.app'}/api/webhooks/onlyfans`}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-400 font-mono select-all"
+                />
               </div>
             </div>
           )}
@@ -481,7 +560,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                 <input
                   type="text"
                   readOnly
-                  value="https://velvetdesk.app/api/webhooks/fansly"
+                  value={`${typeof window !== 'undefined' ? window.location.origin : 'https://velvetdesk.app'}/api/webhooks/fansly`}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-400 font-mono select-all"
                 />
               </div>

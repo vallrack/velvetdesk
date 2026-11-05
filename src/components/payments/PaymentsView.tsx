@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Flame,
   Send,
+  Heart,
 } from 'lucide-react';
 import { PaymentGatewayConfig } from '../../types';
 import { fetchPaymentsTransactions, type PaymentTransactionItem } from '../../services/apiService';
@@ -67,7 +68,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
               Gestión de Pagos, Pasarelas y Desbloqueos (RF4.1 - RF4.3)
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Monetización externa para WhatsApp/Telegram y cobro PPV nativo para Fansly/ManyVids.
+              Monetización externa para WhatsApp/Telegram y cobro PPV nativo para OnlyFans/Fansly/ManyVids.
             </p>
           </div>
 
@@ -157,7 +158,20 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({
             Reglas de liquidación directa para canales con pasarela propia integrada.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-5 bg-gradient-to-br from-sky-950/40 to-slate-900 border border-sky-500/30 rounded-2xl">
+              <div className="flex items-center gap-2 mb-2 text-sky-400 font-bold text-xs">
+                <Heart className="w-4 h-4" /> OnlyFans Native PPV & Tips
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Cobro automático de PPVs y propinas a través del saldo/tarjeta de OnlyFans. Los fans pagan en 1 clic y el vault se desbloquea al instante.
+              </p>
+              <div className="mt-3 flex items-center justify-between text-xs text-sky-300 font-mono">
+                <span>Comisión OF: 20%</span>
+                <span>Depósito: Directo / Diario</span>
+              </div>
+            </div>
+
             <div className="p-5 bg-gradient-to-br from-cyan-950/40 to-slate-900 border border-cyan-500/30 rounded-2xl">
               <div className="flex items-center gap-2 mb-2 text-cyan-400 font-bold text-xs">
                 <Flame className="w-4 h-4" /> Fansly Native Pay-Per-View

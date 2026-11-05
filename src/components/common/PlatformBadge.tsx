@@ -1,6 +1,6 @@
 import React from 'react';
 import { PlatformId } from '../../types';
-import { Send, MessageCircle, Flame, Film, PlaySquare, Radio, Crown } from 'lucide-react';
+import { Send, MessageCircle, Flame, Film, PlaySquare, Radio, Crown, Heart } from 'lucide-react';
 
 interface PlatformBadgeProps {
   platform: PlatformId;
@@ -12,9 +12,16 @@ export const PLATFORM_CONFIG: Record<
   PlatformId,
   { name: string; color: string; bg: string; border: string; icon: React.ComponentType<{ className?: string }> }
 > = {
+  onlyfans: {
+    name: 'OnlyFans',
+    color: '#00aff0',
+    bg: 'bg-sky-500/10',
+    border: 'border-sky-500/30',
+    icon: Heart,
+  },
   fansly: {
     name: 'Fansly',
-    color: '#00aff0',
+    color: '#06b6d4',
     bg: 'bg-cyan-500/10',
     border: 'border-cyan-500/30',
     icon: Flame,

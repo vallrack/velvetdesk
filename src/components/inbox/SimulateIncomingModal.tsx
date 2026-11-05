@@ -29,6 +29,7 @@ export const SimulateIncomingModal: React.FC<SimulateIncomingModalProps> = ({
   if (!isOpen) return null;
 
   const platforms: PlatformId[] = [
+    'onlyfans',
     'fansly',
     'telegram',
     'manyvids',

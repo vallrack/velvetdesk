@@ -40,6 +40,7 @@ export const WebhooksMonitorModal: React.FC<WebhooksMonitorModalProps> = ({
   const [testMessage, setTestMessage] = useState('¡Hola! Me encantó tu última foto, ¿tienes contenido nuevo disponible?');
 
   const platforms: { id: PlatformId; name: string }[] = [
+    { id: 'onlyfans', name: 'OnlyFans' },
     { id: 'whatsapp', name: 'WhatsApp' },
     { id: 'telegram', name: 'Telegram' },
     { id: 'fansly', name: 'Fansly' },

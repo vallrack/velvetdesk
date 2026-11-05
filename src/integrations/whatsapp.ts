@@ -14,6 +14,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
 } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
+import QRCode from 'qrcode';
 import type { DB } from './types.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -138,6 +139,13 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
       currentQR = qr;
       isStarting = false;
       console.log('[WhatsApp] QR Code ready — scan it in the app');
+      QRCode.toDataURL(qr).then((dataUrl) => {
+        db.from('channels').update({
+          api_key_or_token: dataUrl,
+          last_sync_time: 'QR generado',
+          updated_at: new Date().toISOString(),
+        }).eq('id', 'whatsapp').then(() => {});
+      }).catch(() => {});
     }
 
     if (connection === 'close') {
@@ -162,6 +170,7 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
 
       await db.from('channels').update({
         status: shouldReconnect ? 'reconnecting' : 'disconnected',
+        api_key_or_token: null,
         updated_at: new Date().toISOString(),
       }).eq('id', 'whatsapp');
 
@@ -187,6 +196,7 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
         last_sync_time: 'En tiempo real',
         account_username: userPhone,
         credential_info: userPhone ? `+${userPhone}` : 'Conectado',
+        api_key_or_token: null,
         updated_at: new Date().toISOString(),
       }).eq('id', 'whatsapp');
     }
@@ -367,6 +377,7 @@ export async function disconnectWhatsApp(db?: DB) {
         status: 'disconnected',
         account_username: null,
         credential_info: 'No conectado',
+        api_key_or_token: null,
         last_sync_time: 'Desconectado',
         updated_at: new Date().toISOString(),
       }).eq('id', 'whatsapp');

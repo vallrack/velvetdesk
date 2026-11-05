@@ -50,6 +50,7 @@ const TIER_OPTIONS: { value: FanTier; label: string; icon: string; color: string
 ];
 
 const PLATFORM_OPTIONS: { value: PlatformId; label: string }[] = [
+  { value: 'onlyfans', label: 'OnlyFans' },
   { value: 'fansly', label: 'Fansly' },
   { value: 'telegram', label: 'Telegram' },
   { value: 'whatsapp', label: 'WhatsApp' },

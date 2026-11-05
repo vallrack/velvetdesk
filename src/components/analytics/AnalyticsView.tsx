@@ -114,7 +114,7 @@ function KpiCard({ label, value, sub, color, icon: Icon, trend }: any) {
 
 // ─── Channel colors map ───────────────────────────────────────────────────────
 const CHANNEL_COLORS: Record<string, string> = {
-  whatsapp: '#25d366', telegram: '#229ed9', fansly: '#00aff0',
+  onlyfans: '#00aff0', whatsapp: '#25d366', telegram: '#229ed9', fansly: '#06b6d4',
   vipweb: '#eab308', manyvids: '#e91e63', pornhub: '#ff9000', scatbook: '#a855f7',
 };
 

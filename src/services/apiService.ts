@@ -525,7 +525,7 @@ export async function fetchWebhookLogs(): Promise<{ totalLogs: number; recent: W
     return {
       totalLogs: 0,
       recent: [],
-      supportedPlatforms: ['fansly', 'telegram', 'whatsapp', 'manyvids', 'pornhub', 'scatbook', 'vipweb'],
+      supportedPlatforms: ['onlyfans', 'fansly', 'telegram', 'whatsapp', 'manyvids', 'pornhub', 'scatbook', 'vipweb'],
     };
   }
 }

@@ -1,4 +1,5 @@
 export type PlatformId = 
+  | 'onlyfans'
   | 'fansly' 
   | 'telegram' 
   | 'manyvids' 

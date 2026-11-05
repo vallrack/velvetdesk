@@ -13,6 +13,7 @@ import type { DB } from './src/integrations/types.js';
 
 
 // Channel integrations
+import { startOnlyFansPoller, stopOnlyFansPoller, disconnectOnlyFans } from './src/integrations/onlyfans.js';
 import { startTelegramBot, stopTelegramBot, disconnectTelegram, sendTelegramMessage, isTelegramConnected } from './src/integrations/telegram.js';
 import { startWhatsAppBot, getWhatsAppQR, stopWhatsAppBot, disconnectWhatsApp, sendWhatsAppMessage, isWhatsAppConnected, getWhatsAppUser, isWhatsAppStarting } from './src/integrations/whatsapp.js';
 import { startFanslyPoller, stopFanslyPoller, disconnectFansly } from './src/integrations/fansly.js';
@@ -259,6 +260,12 @@ async function startServer() {
         isReallyConnected = isTelegramConnected();
         latencyMs = isReallyConnected ? Date.now() - t0 + 12 : 0;
         break;
+      case 'onlyfans': {
+        const { data: ch } = await database.from('channels').select('status, session_cookie, api_key_or_token').eq('id', id).single();
+        isReallyConnected = ch?.status === 'connected' && Boolean(ch?.session_cookie || ch?.api_key_or_token);
+        latencyMs = isReallyConnected ? Date.now() - t0 + 25 : 0;
+        break;
+      }
       default: {
         // For API-based pollers: try to verify by checking DB status
         const { data: ch } = await database.from('channels').select('status, api_key_or_token').eq('id', id).single();
@@ -317,6 +324,9 @@ async function startServer() {
     console.log(`[Security] Clean disconnect requested for channel: ${id}`);
     
     switch (id) {
+      case 'onlyfans':
+        await disconnectOnlyFans(database);
+        break;
       case 'whatsapp':
         await disconnectWhatsApp(database);
         break;
@@ -1279,6 +1289,11 @@ async function initChannelIntegrations() {
 
 async function restartChannelIntegration(id: string, channelData: any) {
   switch (id) {
+    case 'onlyfans':
+      if (channelData.session_cookie || channelData.api_key_or_token) {
+        await startOnlyFansPoller(channelData.session_cookie || channelData.api_key_or_token, db!);
+      }
+      break;
     case 'telegram':
       if (channelData.api_key_or_token) {
         await startTelegramBot(channelData.api_key_or_token, db!);

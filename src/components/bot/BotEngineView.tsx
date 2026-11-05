@@ -975,6 +975,7 @@ export const BotEngineView: React.FC<BotEngineViewProps> = ({
                     className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-pink-500 cursor-pointer"
                   >
                     <option value="all">Todas las plataformas</option>
+                    <option value="onlyfans">OnlyFans</option>
                     <option value="whatsapp">WhatsApp</option>
                     <option value="telegram">Telegram</option>
                     <option value="fansly">Fansly</option>

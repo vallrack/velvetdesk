@@ -69,7 +69,7 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
               Canales Conectados & Centralización Omnicanal (RF1.1)
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Inicia sesión y sincroniza tus cuentas de Fansly, Telegram, ManyVids, WhatsApp, Pornhub, Scatbook y VIPweb.
+              Inicia sesión y sincroniza tus cuentas de OnlyFans, Fansly, Telegram, ManyVids, WhatsApp, Pornhub, Scatbook y VIPweb.
             </p>
           </div>
 

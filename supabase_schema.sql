@@ -204,7 +204,8 @@ INSERT INTO public.bot_persona (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 -- ============================================================
 INSERT INTO public.channels (id, name, icon_name, color, bg_color, status, sync_type, auth_method)
 VALUES
-  ('fansly',   'Fansly',    'Flame',         '#00aff0', 'rgba(0,175,240,0.15)',   'disconnected', 'API Oficial',               'api_token'),
+  ('onlyfans', 'OnlyFans',  'Heart',         '#00aff0', 'rgba(0,175,240,0.15)',   'disconnected', 'API / Session Token',        'session_cookie'),
+  ('fansly',   'Fansly',    'Flame',         '#06b6d4', 'rgba(6,182,212,0.15)',   'disconnected', 'API Oficial',               'api_token'),
   ('telegram', 'Telegram',  'Send',          '#229ed9', 'rgba(34,158,217,0.15)', 'disconnected', 'Telegram Bot API',          'api_token'),
   ('manyvids', 'ManyVids',  'Film',          '#e91e63', 'rgba(233,30,99,0.15)',  'disconnected', 'Session Cookie / Scraper',  'session_cookie'),
   ('whatsapp', 'WhatsApp',  'MessageCircle', '#25d366', 'rgba(37,211,102,0.15)','disconnected', 'Baileys Multi-Device (QR)', 'qr_code'),

@@ -12,6 +12,21 @@ import {
 
 export const INITIAL_CHANNELS: ChannelIntegration[] = [
   {
+    id: 'onlyfans',
+    name: 'OnlyFans',
+    iconName: 'Heart',
+    color: '#00aff0',
+    bgColor: 'rgba(0, 175, 240, 0.15)',
+    status: 'disconnected',
+    syncType: 'API / Session Token',
+    activeChatsCount: 0,
+    unreadTotal: 0,
+    todayRevenue: 0,
+    latencyMs: 95,
+    lastSyncTime: 'Nunca',
+    credentialInfo: '',
+  },
+  {
     id: 'fansly',
     name: 'Fansly',
     iconName: 'Flame',

@@ -555,6 +555,7 @@ export default function App() {
   }) => {
     let existingThread = threads.find(t => t.platform === params.platform && t.fanName === params.fanName);
     let chatId = existingThread?.id;
+    let createdFan: FanProfile | null = null;
 
     if (!existingThread) {
       chatId = `chat-sim-${Date.now()}`;
@@ -569,6 +570,7 @@ export default function App() {
         notes: `Nuevo cliente simulado en ${params.platform.toUpperCase()}.`,
         tags: [params.platform, params.fanTier], preferences: ['Contenido exclusivo'], purchasedItems: [],
       };
+      createdFan = newFan;
       const newThread: ChatThread = {
         id: chatId, fanId: newFanId, fanName: params.fanName,
         fanHandle: newFan.handle, fanAvatar: newFan.avatar,
@@ -607,7 +609,7 @@ export default function App() {
       platform: params.platform,
       chatId: chatId!,
       fanName: params.fanName,
-      fanAvatar: newFan?.avatar || existingThread?.fanAvatar,
+      fanAvatar: createdFan?.avatar || existingThread?.fanAvatar,
       read: false,
     };
     setNotifications(prev => [notif, ...prev.slice(0, 29)]);
@@ -905,7 +907,7 @@ export default function App() {
         onClose={() => setIsWebhooksModalOpen(false)}
         onWebhookTested={async () => {
           const freshThreads = await api.fetchThreads();
-          setThreads(freshThreads.data);
+          setThreads(freshThreads);
         }}
       />
     </div>
