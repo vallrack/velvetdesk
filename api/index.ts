@@ -63,7 +63,31 @@ app.get(['/api/channels', '/channels'], async (_req: Request, res: Response) => 
       const threads = thRes.data || [];
       const purchases = purRes.data || [];
 
-      const base = dbChannels.length > 0 ? dbChannels : DEFAULT_CHANNELS;
+      // Ensure all DEFAULT_CHANNELS (including OnlyFans) are present
+      const channelMap = new Map<string, any>();
+      DEFAULT_CHANNELS.forEach((dc) => channelMap.set(dc.id.toLowerCase(), { ...dc }));
+      dbChannels.forEach((dbc: any) => {
+        const id = (dbc.id || '').toLowerCase();
+        channelMap.set(id, { ...(channelMap.get(id) || {}), ...dbc });
+      });
+      const base = Array.from(channelMap.values());
+
+      // Auto-insert missing channels (like OnlyFans) to Supabase in background
+      const missing = DEFAULT_CHANNELS.filter(dc => !dbChannels.some((dbc: any) => (dbc.id || '').toLowerCase() === dc.id));
+      if (missing.length > 0) {
+        db.from('channels').upsert(missing.map(m => ({
+          id: m.id,
+          name: m.name,
+          icon_name: m.icon_name,
+          color: m.color,
+          bg_color: m.bg_color,
+          status: 'disconnected',
+          sync_type: m.sync_type,
+          last_sync_time: 'Nunca',
+          credential_info: '',
+          auth_method: 'session_cookie',
+        }))).then(() => {}, () => {});
+      }
       const enriched = base.map((ch: any) => {
         const chId = ch.id?.toLowerCase();
         const chThreads = threads.filter((t: any) => t.platform?.toLowerCase() === chId);

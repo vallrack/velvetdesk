@@ -77,7 +77,7 @@ export async function fetchChannels(): Promise<ChannelIntegration[]> {
   try {
     const raw = await apiFetch<any[]>('/channels');
     if (!raw || !Array.isArray(raw)) return INITIAL_CHANNELS;
-    return raw.map((c) => ({
+    const mapped: ChannelIntegration[] = raw.map((c) => ({
       id: c.id as PlatformId,
       name: c.name,
       iconName: c.icon_name || c.iconName,
@@ -97,6 +97,15 @@ export async function fetchChannels(): Promise<ChannelIntegration[]> {
       apiKeyOrToken: c.api_key_or_token || c.apiKeyOrToken,
       sessionCookie: c.session_cookie || c.sessionCookie,
     }));
+
+    // Guarantee all INITIAL_CHANNELS (like onlyfans) are always present
+    const existingIds = new Set(mapped.map((c) => c.id));
+    for (const initCh of INITIAL_CHANNELS) {
+      if (!existingIds.has(initCh.id)) {
+        mapped.unshift(initCh);
+      }
+    }
+    return mapped;
   } catch (err) {
     console.warn('[API] Using fallback channels:', err);
     return INITIAL_CHANNELS;

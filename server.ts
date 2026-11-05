@@ -209,7 +209,27 @@ async function startServer() {
     const database = requireDb(res); if (!database) return;
     const { data, error } = await database.from('channels').select('*').order('name');
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+
+    const channels = data || [];
+    const hasOnlyFans = channels.some((c: any) => c.id === 'onlyfans');
+    if (!hasOnlyFans) {
+      const ofRow = {
+        id: 'onlyfans',
+        name: 'OnlyFans',
+        icon_name: 'Heart',
+        color: '#00aff0',
+        bg_color: 'rgba(0,175,240,0.15)',
+        status: 'disconnected',
+        sync_type: 'API / Session Token',
+        last_sync_time: 'Nunca',
+        credential_info: '',
+        auth_method: 'session_cookie',
+      };
+      database.from('channels').upsert(ofRow).then(() => {}, () => {});
+      channels.unshift(ofRow);
+    }
+
+    res.json(channels);
   });
 
   app.patch('/api/channels/:id/credentials', async (req, res) => {

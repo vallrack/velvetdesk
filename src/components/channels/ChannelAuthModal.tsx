@@ -147,7 +147,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
       } else if (activePlatform === 'telegram') {
         credInfo = usernameOrEmail || (apiToken ? `Bot: ${apiToken.substring(0, 10)}...` : '@VelvetGoddess_bot');
       } else if (activePlatform === 'onlyfans') {
-        credInfo = usernameOrEmail ? `@${usernameOrEmail.replace('@', '')}` : (sessionCookie || apiToken ? `Token: ${(sessionCookie || apiToken).substring(0, 10)}...` : '@velvet_onlyfans');
+        credInfo = usernameOrEmail ? (usernameOrEmail.includes('@') ? usernameOrEmail : `@${usernameOrEmail.replace('@', '')}`) : (sessionCookie || apiToken ? `Token: ${(sessionCookie || apiToken).substring(0, 10)}...` : 'OnlyFans Conectado');
       } else if (activePlatform === 'fansly') {
         credInfo = apiToken ? `Token: ${apiToken.substring(0, 10)}...` : `Token: fan_live_${Math.random().toString(36).substring(2, 7)}...`;
       } else {
@@ -159,7 +159,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
         accountUsername: activePlatform === 'whatsapp' ? (waPhone || '+1 (305) 555-0199') : (usernameOrEmail || '@velvet_creator'),
         status: 'connected',
         apiKeyOrToken: apiToken || undefined,
-        sessionCookie: sessionCookie || (activePlatform === 'manyvids' || activePlatform === 'pornhub' ? password : undefined),
+        sessionCookie: sessionCookie || (activePlatform === 'manyvids' || activePlatform === 'pornhub' || activePlatform === 'onlyfans' ? password : undefined),
       });
 
       setTimeout(() => {
@@ -454,40 +454,59 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
             </div>
           )}
 
-          {/* ONLYFANS API / SESSION TOKEN & WEBHOOK */}
+          {/* ONLYFANS LOGIN & CREDENTIALS */}
           {activePlatform === 'onlyfans' && (
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  OnlyFans Session Cookie ('sess' / 'auth_id') o API Token
+                  Correo Electrónico de OnlyFans (Email)
                 </label>
                 <input
-                  type="password"
-                  placeholder="sess=abc123xyz... o of_token_..."
-                  value={sessionCookie || apiToken}
-                  onChange={(e) => {
-                    setSessionCookie(e.target.value);
-                    setApiToken(e.target.value);
-                  }}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 font-mono"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Obtén tu cookie 'sess' o auth_id desde la consola del navegador (F12 &gt; Application &gt; Cookies &gt; onlyfans.com) o tu token de API de creadora.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Usuario Oficial de OnlyFans
-                </label>
-                <input
-                  type="text"
-                  placeholder="@velvet_creator"
+                  type="email"
+                  placeholder="creadora@gmail.com o correo de la cuenta"
                   value={usernameOrEmail}
                   onChange={(e) => setUsernameOrEmail(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Contraseña de la Cuenta OnlyFans
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  🔒 El agente sincroniza y vincula la sesión de OnlyFans para gestionar mensajes en el Inbox unificado.
+                </p>
+              </div>
+
+              {/* Optional Cookie / Token for advanced setups */}
+              <details className="text-xs text-slate-400 group">
+                <summary className="cursor-pointer text-[11px] text-sky-400 hover:text-sky-300 select-none">
+                  + Token de API o Cookie de Sesión 'sess' (Opcional / Avanzado)
+                </summary>
+                <div className="mt-2 space-y-2 pt-2 border-t border-slate-800/80">
+                  <input
+                    type="password"
+                    placeholder="sess=abc123xyz... o token"
+                    value={sessionCookie || apiToken}
+                    onChange={(e) => {
+                      setSessionCookie(e.target.value);
+                      setApiToken(e.target.value);
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    Opcional: Si tienes la cookie 'sess' o auth_id extraída de DevTools, puedes pegarla aquí.
+                  </p>
+                </div>
+              </details>
 
               {/* Webhook Endpoint for OnlyFans */}
               <div>
