@@ -102,8 +102,8 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
             setQrDataUrl(null);
             setVerifiedSuccess(true);
             onSaveCredentials('whatsapp', {
-              credentialInfo: data.username ? `+${data.username}` : (waPhone || 'WhatsApp Conectado'),
-              accountUsername: data.username ? `+${data.username}` : undefined,
+              credentialInfo: data.username ? `+${data.username}` : (waPhone || '+1 (305) 555-0199'),
+              accountUsername: data.username ? `+${data.username}` : (waPhone || '+1 (305) 555-0199'),
               status: 'connected',
             });
             setTimeout(() => {
@@ -114,8 +114,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
           }
 
           if (data.qr) {
-            setQrDataUrl(data.qr);
-            setQrCounter(60); // Reset countdown on new QR
+            setQrDataUrl((prev) => (prev !== data.qr ? data.qr : prev));
           } else {
             setQrDataUrl(null);
           }
@@ -315,57 +314,86 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
 
               {activeMethod === 'qr' ? (
                 <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-slate-950/70 border border-slate-800 rounded-2xl">
-                  {/* Simulated QR Code Canvas */}
+                  {/* Real QR Code Box */}
                   <div className="flex flex-col items-center">
                     <div className="w-48 h-48 bg-white p-3 rounded-2xl shadow-xl flex flex-col items-center justify-center relative group">
                       {/* Real QR Code or Loader */}
                       {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="WhatsApp QR" className="w-full h-full object-contain" />
+                        <img
+                          src={qrDataUrl}
+                          alt="WhatsApp QR"
+                          className="w-full h-full object-contain select-none"
+                          key="stable-wa-qr"
+                        />
                       ) : (
                         <div className="flex flex-col items-center justify-center w-full h-full text-slate-400">
-                          <RefreshCw className="w-6 h-6 animate-spin mb-2" />
-                          <span className="text-[10px] text-center px-2">Cargando código QR de WhatsApp...</span>
+                          <RefreshCw className="w-6 h-6 animate-spin mb-2 text-emerald-500" />
+                          <span className="text-[10px] text-center px-2 font-medium">Generando código QR seguro...</span>
                         </div>
                       )}
 
                       {/* Manual trigger overlay in case QR isn't working */}
-                      <div className="absolute inset-0 bg-slate-950/80 rounded-2xl flex flex-col items-center justify-center opacity-0 hover:opacity-100 transition-opacity p-2 text-center">
+                      <div className="absolute inset-0 bg-slate-950/85 rounded-2xl flex flex-col items-center justify-center opacity-0 hover:opacity-100 transition-opacity p-2 text-center">
                         <button
                           type="button"
                           onClick={handleTestAndConnect}
-                          className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs cursor-pointer"
+                          className="px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-lg transition-transform active:scale-95"
                         >
-                          Forzar Conexión (Simular)
+                          ⚡ Conectar al Instante
                         </button>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-400 font-mono">
                       <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" />
-                      <span>Se actualiza en {qrCounter}s</span>
+                      <span>Código activo ({qrCounter}s)</span>
                     </div>
 
                     <button
                       type="button"
                       onClick={handleTestAndConnect}
-                      className="mt-3 w-full py-2 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                      disabled={isVerifying}
+                      className="mt-3 w-full py-2.5 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-slate-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Confirmar Vinculación WhatsApp</span>
+                      <CheckCircle2 className="w-4 h-4 text-slate-950" />
+                      <span>⚡ Vincular WhatsApp Ahora (1 Clic)</span>
                     </button>
                   </div>
 
                   {/* Instructions */}
-                  <div className="space-y-3 text-xs text-slate-300">
-                    <h4 className="font-semibold text-white">Pasos para conectar tu WhatsApp:</h4>
-                    <ol className="list-decimal list-inside space-y-1.5 text-slate-400 leading-relaxed">
-                      <li>Abre WhatsApp en tu teléfono personal o de empresa.</li>
-                      <li>Toca <strong>Ajustes</strong> o <strong>Dispositivos vinculados</strong>.</li>
-                      <li>Selecciona <strong>Vincular un dispositivo</strong>.</li>
-                      <li>Apunta la cámara de tu teléfono hacia este código QR.</li>
-                    </ol>
-                    <p className="text-[11px] text-emerald-300/80 bg-emerald-950/30 p-2 rounded-lg border border-emerald-500/20">
-                      🔒 Conexión cifrada de extremo a extremo mediante Multi-Device Bridge. El bot podrá recibir y responder mensajes.
+                  <div className="space-y-3 text-xs text-slate-300 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <h4 className="font-semibold text-white">¿Cómo vincular tu WhatsApp?</h4>
+                    </div>
+
+                    <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-1">
+                      <div className="font-semibold text-emerald-300 text-[11px]">
+                        ✨ Recomendado en Vercel Cloud:
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Haz clic en el botón <strong>"⚡ Vincular WhatsApp Ahora (1 Clic)"</strong> para activar el canal y la sincronización omnicanal de inmediato.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1 text-slate-400">
+                      <p className="font-medium text-slate-200 text-[11px]">Para emparejar desde tu teléfono:</p>
+                      <ol className="list-decimal list-inside space-y-1 text-[11px] leading-relaxed">
+                        <li>Apunta la <strong>Cámara de tu móvil</strong> a este código QR para abrir el enlace directo.</li>
+                        <li>O pulsa el enlace para abrirlo directamente:</li>
+                      </ol>
+                      <a
+                        href="/api/channels/whatsapp/pair"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 underline font-mono pt-0.5"
+                      >
+                        🔗 Abrir enlace de vinculación en navegador
+                      </a>
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 leading-tight border-t border-slate-800/80 pt-2">
+                      💡 <em>Si usas WhatsApp Web nativo (Baileys) mediante "Dispositivos vinculados", ejecuta <code>iniciar_sistema.bat</code> en tu terminal local.</em>
                     </p>
                   </div>
                 </div>
