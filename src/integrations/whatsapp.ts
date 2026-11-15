@@ -12,6 +12,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
+  Browsers,
 } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
@@ -135,9 +136,20 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, console as any),
+        keys: makeCacheableSignalKeyStore(state.keys, {
+          info: () => {},
+          error: console.error,
+          warn: console.warn,
+          debug: () => {},
+          trace: () => {},
+          child: () => ({ info: () => {}, error: console.error, warn: console.warn, debug: () => {}, trace: () => {} }),
+        } as any),
       },
-      printQRInTerminal: true,
+      browser: Browsers.macOS('Desktop'),
+      syncFullHistory: false,
+      connectTimeoutMs: 60_000,
+      defaultQueryTimeoutMs: 60_000,
+      keepAliveIntervalMs: 25_000,
       generateHighQualityLinkPreview: false,
     });
   } catch (err: any) {
