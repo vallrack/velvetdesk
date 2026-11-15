@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { login, register, loginAsAdmin } from '../../services/authService';
-import { Zap } from 'lucide-react';
+import { login, register } from '../../services/authService';
 
 interface LoginViewProps {
   onAuthSuccess: () => void;
@@ -14,19 +13,6 @@ export function LoginView({ onAuthSuccess }: LoginViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
-
-  const handleQuickAdminLogin = async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      await loginAsAdmin();
-      onAuthSuccess();
-    } catch (err: any) {
-      setError(err.message || 'Error al iniciar como administrador.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,7 +110,7 @@ export function LoginView({ onAuthSuccess }: LoginViewProps) {
                 type="text"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder={mode === 'register' ? 'tu@correo.com' : 'admin o tu@correo.com'}
+                placeholder={mode === 'register' ? 'tu@correo.com' : 'Usuario o correo'}
                 required
                 className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-500 border border-white/10 outline-none transition-all duration-200 focus:border-purple-500/60"
                 style={{ background: 'rgba(255,255,255,0.05)' }}
@@ -138,7 +124,7 @@ export function LoginView({ onAuthSuccess }: LoginViewProps) {
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder={mode === 'register' ? 'Mínimo 6 caracteres' : 'admin123 o tu contraseña'}
+                placeholder={mode === 'register' ? 'Mínimo 6 caracteres' : '••••••••'}
                 required
                 className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-500 border border-white/10 outline-none transition-all duration-200 focus:border-purple-500/60"
                 style={{ background: 'rgba(255,255,255,0.05)' }}
@@ -175,26 +161,6 @@ export function LoginView({ onAuthSuccess }: LoginViewProps) {
                 ? (mode === 'login' ? 'Iniciando sesión...' : 'Creando cuenta...')
                 : (mode === 'login' ? '✨ Entrar al Panel' : '🚀 Crear mi Cuenta')}
             </button>
-
-            {mode === 'login' && (
-              <div className="pt-3 border-t border-white/10 mt-4 space-y-2">
-                <button
-                  type="button"
-                  onClick={handleQuickAdminLogin}
-                  disabled={loading}
-                  className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-950 transition-all duration-200 bg-gradient-to-r from-amber-400 via-emerald-400 to-teal-400 hover:from-amber-300 hover:to-teal-300 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.98] cursor-pointer"
-                >
-                  <Zap className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
-                  <span>⚡ Acceso Rápido Administrador (1 Clic)</span>
-                </button>
-                <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400">
-                  <span>O escribe:</span>
-                  <code className="text-purple-300 font-mono bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-500/20">admin</code>
-                  <span>/</span>
-                  <code className="text-purple-300 font-mono bg-purple-950/40 px-1.5 py-0.5 rounded border border-purple-500/20">admin123</code>
-                </div>
-              </div>
-            )}
           </form>
         </div>
 
