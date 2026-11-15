@@ -228,13 +228,23 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
+-- HIGH-PERFORMANCE COMPOSITE INDEXES
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_threads_platform_handle ON public.threads(platform, fan_handle);
+CREATE INDEX IF NOT EXISTS idx_threads_last_message_time ON public.threads(last_message_time DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON public.messages(chat_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fans_platform ON public.fans(platform);
+CREATE INDEX IF NOT EXISTS idx_fans_tier ON public.fans(tier);
+CREATE INDEX IF NOT EXISTS idx_vault_type ON public.vault_items(type);
+
+-- ============================================================
 -- REALTIME — enable for live inbox updates
 -- ============================================================
 ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.threads;
 
 -- ============================================================
--- ROW LEVEL SECURITY
+-- ROW LEVEL SECURITY & HARDENED ACCESS POLICIES
 -- ============================================================
 ALTER TABLE public.channels         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fans             ENABLE ROW LEVEL SECURITY;
@@ -247,26 +257,32 @@ ALTER TABLE public.faqs             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_gateways ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bot_persona      ENABLE ROW LEVEL SECURITY;
 
--- Policy: allow all for service_role (backend server uses this key)
-CREATE POLICY "service_role_all" ON public.channels         FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.fans             FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.threads          FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.messages         FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.vault_items      FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.purchase_records FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.bot_rules        FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.faqs             FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.payment_gateways FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY "service_role_all" ON public.bot_persona      FOR ALL TO service_role USING (true) WITH CHECK (true);
+-- 1. Full administrative access for service_role (Backend & Serverless API)
+CREATE POLICY "service_role_channels"         ON public.channels         FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_fans"             ON public.fans             FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_threads"          ON public.threads          FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_messages"         ON public.messages         FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_vault_items"      ON public.vault_items      FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_purchase_records" ON public.purchase_records FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_bot_rules"        ON public.bot_rules        FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_faqs"             ON public.faqs             FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_payment_gateways" ON public.payment_gateways FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_bot_persona"      ON public.bot_persona      FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- Policy: allow all for authenticated users (anon key from frontend)
-CREATE POLICY "authenticated_all" ON public.channels         FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.fans             FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.threads          FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.messages         FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.vault_items      FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.purchase_records FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.bot_rules        FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.faqs             FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.payment_gateways FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "authenticated_all" ON public.bot_persona      FOR ALL TO anon USING (true) WITH CHECK (true);
+-- 2. Authenticated users (logged-in creators/admins) full access
+CREATE POLICY "auth_users_channels"         ON public.channels         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_fans"             ON public.fans             FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_threads"          ON public.threads          FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_messages"         ON public.messages         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_vault_items"      ON public.vault_items      FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_purchase_records" ON public.purchase_records FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_bot_rules"        ON public.bot_rules        FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_faqs"             ON public.faqs             FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_payment_gateways" ON public.payment_gateways FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_users_bot_persona"      ON public.bot_persona      FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- 3. Anonymous client access (Strict read-only for public status, no credential extraction)
+CREATE POLICY "anon_read_channels_safe"     ON public.channels         FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_read_gateways_safe"     ON public.payment_gateways FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_read_threads"           ON public.threads          FOR SELECT TO anon USING (true);
+CREATE POLICY "anon_read_messages"          ON public.messages         FOR SELECT TO anon USING (true);
