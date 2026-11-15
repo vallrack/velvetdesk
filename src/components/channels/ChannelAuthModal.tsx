@@ -364,29 +364,38 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                   <div className="space-y-3 text-xs text-slate-300 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <h4 className="font-semibold text-white">¿Cómo vincular tu WhatsApp?</h4>
+                      <h4 className="font-semibold text-white">¿Por qué WhatsApp dice "No es válido"?</h4>
+                    </div>
+
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5 text-[11px] text-amber-200">
+                      <p className="font-semibold text-amber-300 flex items-center gap-1.5">
+                        <span>ℹ️</span> El escáner interno de WhatsApp (Dispositivos vinculados):
+                      </p>
+                      <p className="text-slate-300 leading-relaxed">
+                        Solo acepta el protocolo WebSocket de WhatsApp Web. En entornos serverless (Vercel), no hay un proceso WebSocket permanente.
+                      </p>
                     </div>
 
                     <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-1">
                       <div className="font-semibold text-emerald-300 text-[11px]">
-                        ✨ Recomendado en Vercel Cloud:
+                        ✨ Solución Inmediata en 1 Clic:
                       </div>
                       <p className="text-[11px] text-slate-300 leading-relaxed">
-                        Haz clic en el botón <strong>"⚡ Vincular WhatsApp Ahora (1 Clic)"</strong> para activar el canal y la sincronización omnicanal de inmediato.
+                        Haz clic en el botón verde <strong>"⚡ Vincular WhatsApp Ahora (1 Clic)"</strong> para conectar el canal y activar el bot de inmediato.
                       </p>
                     </div>
 
                     <div className="space-y-1 text-slate-400">
-                      <p className="font-medium text-slate-200 text-[11px]">Para emparejar desde tu teléfono:</p>
-                      <ol className="list-decimal list-inside space-y-1 text-[11px] leading-relaxed">
-                        <li>Apunta la <strong>Cámara de tu móvil</strong> a este código QR para abrir el enlace directo.</li>
-                        <li>O pulsa el enlace para abrirlo directamente:</li>
-                      </ol>
+                      <p className="font-medium text-slate-200 text-[11px]">Opciones adicionales:</p>
+                      <ul className="list-disc list-inside space-y-1 text-[11px] leading-relaxed">
+                        <li><strong>Cámara de fotos normal:</strong> Escanea este QR con la app de Cámara de tu teléfono (no desde WhatsApp) para abrir la verificación web.</li>
+                        <li><strong>WhatsApp Web Real (Baileys):</strong> Ejecuta <code>npm run dev</code> en tu PC para abrir el socket nativo y escanear desde "Dispositivos vinculados".</li>
+                      </ul>
                       <a
                         href="/api/channels/whatsapp/pair"
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 underline font-mono pt-0.5"
+                        className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 underline font-mono pt-1"
                       >
                         🔗 Abrir enlace de vinculación en navegador
                       </a>
