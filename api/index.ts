@@ -475,12 +475,18 @@ app.post(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Req
         if (thread && thread.platform === 'telegram') {
           const { data: tgChannel } = await db.from('channels').select('api_key_or_token').eq('id', 'telegram').single();
           if (tgChannel?.api_key_or_token) {
-            const tgChatId = (thread.fan_handle || '').replace('@', '');
-            await fetch(`https://api.telegram.org/bot${tgChannel.api_key_or_token}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: tgChatId, text: msg.text || '' }),
-            });
+            let tgChatTarget: string = thread.fan_handle;
+            const { data: fanData } = await db.from('fans').select('phone_or_username').eq('id', thread.fan_id).single();
+            if (fanData?.phone_or_username) {
+              tgChatTarget = fanData.phone_or_username;
+            }
+            if (tgChatTarget) {
+              await fetch(`https://api.telegram.org/bot${tgChannel.api_key_or_token}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: tgChatTarget, text: msg.text || '' }),
+              }).catch(console.warn);
+            }
           }
         }
       } catch (dispErr) {
@@ -593,6 +599,7 @@ app.post(['/api/webhooks/:platform', '/webhooks/:platform'], async (req: Request
       } else {
         // Create new fan if not exists
         chatId = chatId || `chat-${platform}-${Date.now()}`;
+        const tgNumId = body.from?.id ? String(body.from.id) : (body.message?.chat?.id ? String(body.message.chat.id) : null);
         await db.from('fans').upsert({
           id: fanId,
           name: fanName,
@@ -605,6 +612,7 @@ app.post(['/api/webhooks/:platform', '/webhooks/:platform'], async (req: Request
           last_active: 'En línea',
           notes: `Ingresado automáticamente vía Webhook ${platform.toUpperCase()}`,
           tags: [platform, fanTier],
+          phone_or_username: tgNumId || fanHandle,
         });
 
         // Insert new thread
