@@ -14,6 +14,14 @@ import WebSocket from 'ws';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { DB } from './src/integrations/types.js';
 
+// Prevent unexpected crashes from killing the 24/7 background server
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Server Warning] Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.warn('[Server Warning] Uncaught Exception:', err.message);
+});
+
 // Polyfill native WebSocket if not present in Node environment
 if (typeof globalThis.WebSocket === 'undefined') {
   (globalThis as any).WebSocket = WebSocket;
@@ -1455,11 +1463,15 @@ function scheduleAudioCleanup() {
 async function initChannelIntegrations() {
   if (!db) return;
 
-  const { data: channels } = await db.from('channels').select('*').eq('status', 'connected');
-  if (channels) {
-    for (const ch of channels) {
-      await restartChannelIntegration(ch.id, ch);
+  try {
+    const { data: channels, error } = await db.from('channels').select('*').eq('status', 'connected');
+    if (!error && channels) {
+      for (const ch of channels) {
+        await restartChannelIntegration(ch.id, ch).catch((e) => console.warn(`[Channel Restart ${ch.id}]`, e));
+      }
     }
+  } catch (err: any) {
+    console.warn('[Channels] Supabase query warning during init:', err.message);
   }
 
   // Auto-start WhatsApp bot daemon so the live Baileys QR code is generated & synced to Supabase
