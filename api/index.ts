@@ -526,6 +526,90 @@ app.get(['/api/messages/search', '/messages/search'], async (req: Request, res: 
   res.json({ data: [] });
 });
 
+// ── Unlock PPV Message & Auto-Record Purchase ─────────────────────────────────
+app.patch(['/api/messages/:id/unlock', '/messages/:id/unlock'], async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { price, chatId, itemTitle } = req.body;
+  const numPrice = Number(price) || 0;
+
+  if (db) {
+    try {
+      // 1. Fetch current message to retain existing media properties
+      const { data: existingMsg } = await db.from('messages').select('*').eq('id', id).single();
+      const updatedMedia = {
+        ...(existingMsg?.media || {}),
+        ...(req.body.media || {}),
+        isUnlocked: true,
+      };
+      const updatedPayment = existingMsg?.payment_details ? {
+        ...existingMsg.payment_details,
+        status: 'confirmed',
+      } : null;
+
+      const { data: updatedMsg, error: msgError } = await db
+        .from('messages')
+        .update({
+          media: updatedMedia,
+          ...(updatedPayment ? { payment_details: updatedPayment } : {}),
+          status: 'delivered',
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (msgError) {
+        console.warn('[Unlock PPV Error]', msgError);
+      }
+
+      // 2. Update fan total_spent, tier and record purchase
+      if (chatId && numPrice > 0) {
+        const { data: thread } = await db.from('threads').select('fan_id, platform, total_spent').eq('id', chatId).single();
+        if (thread && thread.fan_id) {
+          const { data: fan } = await db.from('fans').select('total_spent').eq('id', thread.fan_id).single();
+          const currentSpent = Number(fan?.total_spent) || 0;
+          const newTotal = currentSpent + numPrice;
+          const newTier = newTotal >= 250 ? 'vip' : (newTotal >= 50 ? 'recurrente' : 'curioso');
+
+          await db.from('fans').update({
+            total_spent: newTotal,
+            tier: newTier,
+            updated_at: new Date().toISOString(),
+          }).eq('id', thread.fan_id);
+
+          await db.from('purchase_records').insert({
+            fan_id: thread.fan_id,
+            vault_item_id: 'ppv-unlocked',
+            item_title: itemTitle || 'Contenido Exclusivo PPV',
+            amount: numPrice,
+            platform: thread.platform || 'direct',
+            payment_method: 'Directo / Omnicanal',
+          });
+
+          await db.from('threads').update({
+            total_spent: (Number(thread.total_spent) || 0) + numPrice,
+            fan_tier: newTier,
+          }).eq('id', chatId);
+
+          if (thread.platform) {
+            const { data: ch } = await db.from('channels').select('today_revenue').eq('id', thread.platform).single();
+            if (ch) {
+              await db.from('channels').update({
+                today_revenue: (Number(ch.today_revenue) || 0) + numPrice,
+              }).eq('id', thread.platform);
+            }
+          }
+        }
+      }
+
+      return res.json(updatedMsg || { success: true, id, isUnlocked: true });
+    } catch (e: any) {
+      console.warn('[Unlock PPV Error]', e);
+    }
+  }
+
+  res.json({ success: true, id, isUnlocked: true });
+});
+
 // ── Webhooks Hub (Ingestion & Verification for 7 Platforms) ───────────────────
 interface WebhookLog {
   id: string;

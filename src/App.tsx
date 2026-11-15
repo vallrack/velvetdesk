@@ -399,6 +399,15 @@ export default function App() {
       ),
     }));
 
+    setThreads(prev => prev.map(t => t.id === chatId ? { ...t, totalSpent: (t.totalSpent || 0) + amount } : t));
+    setFans(prev => prev.map(f => {
+      const thread = threads.find(t => t.id === chatId);
+      if (!thread || f.id !== thread.fanId) return f;
+      const newTotal = (f.totalSpent || 0) + amount;
+      const newTier: FanTier = newTotal >= 250 ? 'vip' : newTotal >= 50 ? 'recurrente' : 'curioso';
+      return { ...f, totalSpent: newTotal, tier: newTier };
+    }));
+
     if (unlockedItem) {
       const releaseMsg: Message = {
         id: `release-${Date.now()}`,
@@ -414,7 +423,7 @@ export default function App() {
     }
 
     await api.unlockPpv(messageId, chatId, amount, unlockedItem?.title || 'Contenido PPV').catch(console.error);
-  }, [vaultItems]);
+  }, [vaultItems, threads]);
 
   // ─── Fan CRUD & Batch Operations (CRM) ──────────────────────────────────
   const handleCreateFan = useCallback(async (fan: Partial<FanProfile>) => {
