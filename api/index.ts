@@ -418,7 +418,7 @@ app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Requ
           username: ch.account_username || ch.credential_info || '+1 (305) 555-0199',
         });
       }
-      // If a local or remote daemon has pushed a live Baileys QR data URL into Supabase
+      // If Render daemon or local daemon has pushed a live Baileys QR data URL into Supabase
       if (ch && ch.api_key_or_token && ch.api_key_or_token.startsWith('data:image/')) {
         return res.json({
           status: 'pending',
@@ -428,45 +428,11 @@ app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Requ
       }
     }
 
-    // Return cached QR if still valid (keeps QR completely stable, prevents flickering/changing)
-    if (cachedWhatsAppQR && cachedWhatsAppQR.expiresAt > Date.now()) {
-      return res.json({
-        status: 'pending',
-        qr: cachedWhatsAppQR.qr,
-        pairingCode: '8K29-4XLP',
-      });
-    }
-
-    // Generate valid, stable QR Code data URL
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'velvetdesk.app';
-    const proto = req.headers['x-forwarded-proto'] || 'https';
-    const pairingPayload = `${proto}://${host}/api/channels/whatsapp/pair`;
-    const qrDataUrl = await QRCode.toDataURL(pairingPayload, {
-      margin: 2,
-      width: 256,
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff',
-      },
-    });
-
-    cachedWhatsAppQR = {
-      qr: qrDataUrl,
-      expiresAt: Date.now() + 300_000, // 5 min TTL
-    };
-
-    if (db) {
-      db.from('channels').update({
-        api_key_or_token: qrDataUrl,
-        last_sync_time: 'QR generado',
-        updated_at: new Date().toISOString(),
-      }).eq('id', 'whatsapp').then(() => {}, () => {});
-    }
-
+    // If no live Baileys QR is ready yet in Supabase, signal waiting state
     res.json({
-      status: 'pending',
-      qr: qrDataUrl,
-      pairingCode: '8K29-4XLP',
+      status: 'waiting',
+      qr: null,
+      message: 'Iniciando conexión con WhatsApp Web... El código QR oficial se generará en unos instantes.',
     });
   } catch (err: any) {
     console.error('[WhatsApp QR Error]', err);

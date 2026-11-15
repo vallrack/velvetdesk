@@ -1456,10 +1456,18 @@ async function initChannelIntegrations() {
   if (!db) return;
 
   const { data: channels } = await db.from('channels').select('*').eq('status', 'connected');
-  if (!channels) return;
+  if (channels) {
+    for (const ch of channels) {
+      await restartChannelIntegration(ch.id, ch);
+    }
+  }
 
-  for (const ch of channels) {
-    await restartChannelIntegration(ch.id, ch);
+  // Auto-start WhatsApp bot daemon so the live Baileys QR code is generated & synced to Supabase
+  if (!isWhatsAppConnected() && !isWhatsAppStarting()) {
+    console.log('[VelvetDesk] Starting 24/7 WhatsApp Baileys daemon for live QR generation...');
+    startWhatsAppBot(db).catch(err => {
+      console.warn('[WhatsApp] Auto-start error:', err.message);
+    });
   }
 }
 
