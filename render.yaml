@@ -2,7 +2,7 @@ services:
   - type: web
     name: velvetdesk-daemon
     env: node
-    plan: starter
+    plan: free
     region: oregon
     buildCommand: npm install --legacy-peer-deps && npm run build
     startCommand: npm start
@@ -14,6 +14,10 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
