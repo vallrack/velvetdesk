@@ -286,3 +286,26 @@ CREATE POLICY "anon_read_channels_safe"     ON public.channels         FOR SELEC
 CREATE POLICY "anon_read_gateways_safe"     ON public.payment_gateways FOR SELECT TO anon USING (true);
 CREATE POLICY "anon_read_threads"           ON public.threads          FOR SELECT TO anon USING (true);
 CREATE POLICY "anon_read_messages"          ON public.messages         FOR SELECT TO anon USING (true);
+
+-- ============================================================
+-- STORAGE: vault_media bucket & access policies
+-- ============================================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('vault_media', 'vault_media', true, 524288000, ARRAY['image/*', 'video/*', 'audio/*'])
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Public can view files in vault_media (CDN URLs)
+CREATE POLICY "Public CDN Access for vault_media"
+ON storage.objects FOR SELECT TO public
+USING (bucket_id = 'vault_media');
+
+-- Authenticated creators or service_role can upload/manage vault_media
+CREATE POLICY "Authenticated users can upload vault_media"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'vault_media');
+
+CREATE POLICY "Service role full access vault_media"
+ON storage.objects FOR ALL TO service_role
+USING (bucket_id = 'vault_media')
+WITH CHECK (bucket_id = 'vault_media');
+
