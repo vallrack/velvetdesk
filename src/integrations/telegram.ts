@@ -212,7 +212,8 @@ export async function sendTelegramMessage(
   const rawChatId = String(chatId).replace('tg-', '').trim();
   try {
     if (media?.url) {
-      const mediaUrl = media.url.startsWith('http') ? media.url : `http://localhost:3000${media.url}`;
+      const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+      const mediaUrl = media.url.startsWith('http') ? media.url : `${appUrl}${media.url.startsWith('/') ? '' : '/'}${media.url}`;
       if (media.type === 'video') {
         await botInstance.sendVideo(rawChatId, mediaUrl, { caption: text || '' });
       } else if (media.type === 'audio' || media.isVoice) {

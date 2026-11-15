@@ -18,6 +18,7 @@ import {
   Edit2,
 } from 'lucide-react';
 import { VaultItem, ChatThread, MediaType } from '../../types';
+import { authClient, isSupabaseConfigured } from '../../services/authService';
 
 interface VaultViewProps {
   vaultItems: VaultItem[];
@@ -171,19 +172,43 @@ export const VaultView: React.FC<VaultViewProps> = ({
     let finalUrl = uploadPreviewUrl;
 
     try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
+      let uploadedToSupabase = false;
+      const fileExt = uploadFile.name.split('.').pop() || 'bin';
+      const cleanFileName = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
 
-      const serverBase = `http://localhost:${import.meta.env.VITE_PORT || 3000}`;
-      const res = await fetch(`${serverBase}/api/vault/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.url) {
-          // Convert relative path to absolute URL so <video> and <img> can load it
-          finalUrl = data.url.startsWith('http') ? data.url : `${serverBase}${data.url}`;
+      // 1. Direct high-speed upload to Supabase Storage (no payload limit, permanent CDN URL)
+      if (isSupabaseConfigured) {
+        try {
+          const { data: sData, error: sErr } = await authClient.storage
+            .from('vault_media')
+            .upload(cleanFileName, uploadFile, { upsert: true, contentType: uploadFile.type });
+
+          if (!sErr && sData) {
+            const { data: pubData } = authClient.storage.from('vault_media').getPublicUrl(sData.path);
+            if (pubData?.publicUrl) {
+              finalUrl = pubData.publicUrl;
+              uploadedToSupabase = true;
+            }
+          }
+        } catch (storageErr) {
+          console.warn('[Vault] Supabase direct storage upload failed, trying backend endpoint:', storageErr);
+        }
+      }
+
+      // 2. Fallback to API route if direct Supabase upload is unavailable
+      if (!uploadedToSupabase) {
+        const formData = new FormData();
+        formData.append('file', uploadFile);
+
+        const res = await fetch('/api/vault/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.url) {
+            finalUrl = data.url.startsWith('http') ? data.url : `${window.location.origin}${data.url}`;
+          }
         }
       }
     } catch (err) {
@@ -270,21 +295,45 @@ export const VaultView: React.FC<VaultViewProps> = ({
       }
 
       try {
-        const formData = new FormData();
-        formData.append('file', editFile);
+        let uploadedToSupabase = false;
+        const fileExt = editFile.name.split('.').pop() || 'bin';
+        const cleanFileName = `vault_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
 
-        const serverBase = `http://localhost:${import.meta.env.VITE_PORT || 3000}`;
-        const res = await fetch(`${serverBase}/api/vault/upload`, {
-          method: 'POST',
-          body: formData,
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.url) {
-            finalUrl = data.url.startsWith('http') ? data.url : `${serverBase}${data.url}`;
-            finalSize = `${(editFile.size / (1024 * 1024)).toFixed(1)} MB`;
-            // For photos: the URL itself is the thumbnail
-            if (editItem.type === 'photo') finalThumbnail = finalUrl;
+        if (isSupabaseConfigured) {
+          try {
+            const { data: sData, error: sErr } = await authClient.storage
+              .from('vault_media')
+              .upload(cleanFileName, editFile, { upsert: true, contentType: editFile.type });
+
+            if (!sErr && sData) {
+              const { data: pubData } = authClient.storage.from('vault_media').getPublicUrl(sData.path);
+              if (pubData?.publicUrl) {
+                finalUrl = pubData.publicUrl;
+                finalSize = `${(editFile.size / (1024 * 1024)).toFixed(1)} MB`;
+                if (editItem.type === 'photo') finalThumbnail = finalUrl;
+                uploadedToSupabase = true;
+              }
+            }
+          } catch (storageErr) {
+            console.warn('[Vault] Supabase storage edit upload warning:', storageErr);
+          }
+        }
+
+        if (!uploadedToSupabase) {
+          const formData = new FormData();
+          formData.append('file', editFile);
+
+          const res = await fetch('/api/vault/upload', {
+            method: 'POST',
+            body: formData,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.url) {
+              finalUrl = data.url.startsWith('http') ? data.url : `${window.location.origin}${data.url}`;
+              finalSize = `${(editFile.size / (1024 * 1024)).toFixed(1)} MB`;
+              if (editItem.type === 'photo') finalThumbnail = finalUrl;
+            }
           }
         }
       } catch (err) {
