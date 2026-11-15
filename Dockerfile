@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package*.json ./
 RUN npm install --legacy-peer-deps
 
+# Patch whatsapp-rust-bridge exports for Node.js ESM compatibility
+RUN node -e "try { const p = 'node_modules/whatsapp-rust-bridge/package.json'; const fs = require('fs'); const j = JSON.parse(fs.readFileSync(p)); j.main = './dist/index.js'; j.exports = { '.': { import: './dist/index.js', require: './dist/index.js', default: './dist/index.js', types: './dist/index.d.ts' } }; fs.writeFileSync(p, JSON.stringify(j, null, 2)); console.log('whatsapp-rust-bridge patched successfully'); } catch(e){ console.warn(e); }"
+
 # Copy application sources
 COPY . .
 
