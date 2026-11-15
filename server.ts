@@ -9,8 +9,15 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
+// @ts-ignore
+import WebSocket from 'ws';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { DB } from './src/integrations/types.js';
+
+// Polyfill native WebSocket if not present in Node environment
+if (typeof globalThis.WebSocket === 'undefined') {
+  (globalThis as any).WebSocket = WebSocket;
+}
 
 
 // Channel integrations
