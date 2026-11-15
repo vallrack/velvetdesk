@@ -19,3 +19,4 @@ services:
         sync: false
       - key: ENCRYPTION_KEY
         sync: false
+

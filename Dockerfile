@@ -28,3 +28,4 @@ EXPOSE 3000
 
 # Start 24/7 background worker server (WhatsApp Baileys, Telegram Bot, Pollers, Express API)
 CMD ["npm", "start"]
+
