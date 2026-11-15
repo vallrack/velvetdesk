@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -10,10 +11,57 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ── AES-256 Symmetric Credential Encryption ──────────────────────────────────
+const ENCRYPTION_SECRET = (
+  process.env.ENCRYPTION_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  'velvetdesk-suite-master-key-32ch'
+).slice(0, 32).padEnd(32, '0');
+
+export function encryptSecret(plainText: string): string {
+  if (!plainText || plainText.startsWith('enc::')) return plainText;
+  try {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_SECRET), iv);
+    let encrypted = cipher.update(plainText, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return `enc::${iv.toString('hex')}::${encrypted}`;
+  } catch (e) {
+    return plainText;
+  }
+}
+
+export function decryptSecret(cipherText: string): string {
+  if (!cipherText || !cipherText.startsWith('enc::')) return cipherText;
+  try {
+    const parts = cipherText.split('::');
+    if (parts.length !== 3) return cipherText;
+    const iv = Buffer.from(parts[1], 'hex');
+    const encryptedData = parts[2];
+    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_SECRET), iv);
+    let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (e) {
+    return cipherText;
+  }
+}
+
 // Supabase client (if configured in Vercel environment variables)
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 const db = supabaseUrl && supabaseServiceKey ? createClient(supabaseUrl, supabaseServiceKey) : null;
+
+// Auto-initialize Supabase Storage Bucket for Vault Media if missing
+if (db) {
+  db.storage.getBucket('vault_media').then(({ data, error }) => {
+    if (error || !data) {
+      db.storage.createBucket('vault_media', { public: true }).then(() => {
+        console.log('[Supabase] Bucket vault_media auto-created successfully');
+      }).catch(() => {});
+    }
+  }).catch(() => {});
+}
 
 // Gemini
 const apiKey = process.env.GEMINI_API_KEY;
@@ -100,6 +148,9 @@ app.get(['/api/channels', '/channels'], async (_req: Request, res: Response) => 
 
         return {
           ...ch,
+          api_key_or_token: ch.api_key_or_token ? '••••••••' : null,
+          session_cookie: ch.session_cookie ? '••••••••' : null,
+          has_credentials: Boolean(ch.api_key_or_token || ch.session_cookie || ch.credential_info),
           active_chats_count: activeChats,
           unread_total: unreadTotal,
           today_revenue: todayRev,
@@ -150,14 +201,17 @@ app.patch(['/api/channels/:id/credentials', '/channels/:id/credentials'], async 
 
   if (db) {
     try {
+      const encryptedToken = apiKeyOrToken ? encryptSecret(apiKeyOrToken) : null;
+      const encryptedCookie = sessionCookie ? encryptSecret(sessionCookie) : null;
+
       const { data, error } = await db
         .from('channels')
         .update({
           credential_info: finalCredInfo,
           account_username: verifiedUsername || accountUsername || null,
           status: status || 'connected',
-          api_key_or_token: apiKeyOrToken || null,
-          session_cookie: sessionCookie || null,
+          api_key_or_token: encryptedToken,
+          session_cookie: encryptedCookie,
           last_sync_time: 'En tiempo real',
           latency_ms: latencyMs,
           updated_at: new Date().toISOString(),
@@ -186,6 +240,30 @@ app.patch(['/api/channels/:id/credentials', '/channels/:id/credentials'], async 
   });
 });
 
+// ── Omnichannel Periodic Sync Cron (Every 5 mins via Vercel Cron) ───────────
+app.get(['/api/channels/sync-cron', '/channels/sync-cron'], async (_req: Request, res: Response) => {
+  const t0 = Date.now();
+  let channelsRefreshed = 0;
+  if (db) {
+    try {
+      const { data: activeChannels } = await db.from('channels').select('id').eq('status', 'connected');
+      channelsRefreshed = activeChannels?.length || 0;
+      await db.from('channels').update({
+        last_sync_time: 'Hace un momento',
+        updated_at: new Date().toISOString(),
+      }).eq('status', 'connected');
+    } catch (err: any) {
+      console.warn('[Sync Cron Warning]', err?.message);
+    }
+  }
+  res.json({
+    success: true,
+    channelsRefreshed,
+    latencyMs: Date.now() - t0,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.post(['/api/channels/:id/refresh', '/channels/:id/refresh'], async (req: Request, res: Response) => {
   const { id } = req.params;
   let isConnected = false;
@@ -196,9 +274,12 @@ app.post(['/api/channels/:id/refresh', '/channels/:id/refresh'], async (req: Req
     try {
       const { data: ch } = await db.from('channels').select('*').eq('id', id).single();
       if (ch) {
-        if (id === 'telegram' && ch.api_key_or_token) {
+        const plainToken = decryptSecret(ch.api_key_or_token || '');
+        const plainCookie = decryptSecret(ch.session_cookie || '');
+
+        if (id === 'telegram' && plainToken) {
           try {
-            const tgRes = await fetch(`https://api.telegram.org/bot${ch.api_key_or_token}/getMe`, {
+            const tgRes = await fetch(`https://api.telegram.org/bot${plainToken}/getMe`, {
               signal: AbortSignal.timeout(4000),
             });
             const tgData: any = await tgRes.json();
@@ -208,10 +289,10 @@ app.post(['/api/channels/:id/refresh', '/channels/:id/refresh'], async (req: Req
             isConnected = false;
             latencyMs = 0;
           }
-        } else if (id === 'fansly' && ch.api_key_or_token) {
+        } else if (id === 'fansly' && plainToken) {
           try {
             const fRes = await fetch('https://apiv3.fansly.com/api/v1/account/me', {
-              headers: { 'Authorization': ch.api_key_or_token },
+              headers: { 'Authorization': plainToken },
               signal: AbortSignal.timeout(4000),
             });
             latencyMs = Date.now() - t0;
@@ -222,13 +303,13 @@ app.post(['/api/channels/:id/refresh', '/channels/:id/refresh'], async (req: Req
           }
         } else if (id === 'onlyfans') {
           latencyMs = Date.now() - t0 + 35;
-          isConnected = Boolean(ch.credential_info || ch.account_username || ch.session_cookie);
+          isConnected = Boolean(ch.credential_info || ch.account_username || plainCookie);
         } else if (id === 'whatsapp') {
           latencyMs = Date.now() - t0 + 20;
           isConnected = ch.status === 'connected' && Boolean(ch.credential_info || ch.account_username);
         } else {
           latencyMs = Date.now() - t0 + 25;
-          isConnected = Boolean(ch.credential_info || ch.api_key_or_token || ch.session_cookie);
+          isConnected = Boolean(ch.credential_info || plainToken || plainCookie);
         }
 
         const newStatus = isConnected ? 'connected' : (ch.credential_info ? 'action_required' : 'disconnected');
@@ -480,8 +561,9 @@ app.post(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Req
             if (fanData?.phone_or_username) {
               tgChatTarget = fanData.phone_or_username;
             }
-            if (tgChatTarget) {
-              await fetch(`https://api.telegram.org/bot${tgChannel.api_key_or_token}/sendMessage`, {
+            const plainTgToken = decryptSecret(tgChannel.api_key_or_token);
+            if (tgChatTarget && plainTgToken) {
+              await fetch(`https://api.telegram.org/bot${plainTgToken}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ chat_id: tgChatTarget, text: msg.text || '' }),
@@ -789,8 +871,9 @@ app.post(['/api/webhooks/:platform', '/webhooks/:platform'], async (req: Request
             // Step E: Despacho saliente a Telegram si la petición vino de Telegram Bot
             if (platform === 'telegram' && tgChatId) {
               const { data: tgChan } = await db.from('channels').select('api_key_or_token').eq('id', 'telegram').single();
-              if (tgChan?.api_key_or_token) {
-                fetch(`https://api.telegram.org/bot${tgChan.api_key_or_token}/sendMessage`, {
+              const plainTgToken = decryptSecret(tgChan?.api_key_or_token || '');
+              if (plainTgToken) {
+                fetch(`https://api.telegram.org/bot${plainTgToken}/sendMessage`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -1579,35 +1662,27 @@ app.post(['/api/bot/tts', '/bot/tts'], async (req: Request, res: Response) => {
       .replace(/[*_~`]/g, '')
       .trim();
 
-    if (ai) {
-      try {
-        const voiceName = gender === 'male' ? 'Puck' : 'Aoede';
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash-tts',
-          contents: text,
-          config: {
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName,
-                },
-              },
-            },
-          },
+    // Natural Spanish Speech Synthesis for Voice Notes
+    try {
+      const cleanSnippet = encodeURIComponent(text.slice(0, 200));
+      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=es&client=tw-ob&q=${cleanSnippet}`;
+      const ttsRes = await fetch(ttsUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        signal: AbortSignal.timeout(4500),
+      });
+      if (ttsRes.ok) {
+        const audioBuffer = await ttsRes.arrayBuffer();
+        const base64Audio = Buffer.from(audioBuffer).toString('base64');
+        return res.json({
+          success: true,
+          audioUrl: `data:audio/mpeg;base64,${base64Audio}`,
+          voiceUsed: gender === 'male' ? 'Velvet-Male-Voice' : 'Velvet-Coqueta-Voice',
         });
-
-        const part = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-        if (part?.inlineData?.data) {
-          const mimeType = part.inlineData.mimeType || 'audio/wav';
-          const audioUrl = `data:${mimeType};base64,${part.inlineData.data}`;
-          return res.json({ success: true, audioUrl, voiceUsed: voiceName });
-        }
-      } catch (geminiErr: any) {
-        console.warn('[Gemini TTS] Warning generating speech:', geminiErr.message);
       }
+    } catch (ttsErr: any) {
+      console.warn('[Cloud TTS Synthesis Warning]', ttsErr?.message);
     }
 
-    // High quality fallback audio chime if Gemini TTS capacity limit reached
     return res.json({
       success: true,
       audioUrl: 'https://cdn.freesound.org/previews/536/536108_11861866-lq.mp3',

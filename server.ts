@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import QRCode from 'qrcode';
 import multer from 'multer';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -25,6 +26,42 @@ import { getBotAuditLogs, clearBotAuditLogs } from './src/integrations/botEngine
 
 dotenv.config();
 
+// ── AES-256 Symmetric Credential Encryption ──────────────────────────────────
+const ENCRYPTION_SECRET = (
+  process.env.ENCRYPTION_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  'velvetdesk-suite-master-key-32ch'
+).slice(0, 32).padEnd(32, '0');
+
+export function encryptSecret(plainText: string): string {
+  if (!plainText || plainText.startsWith('enc::')) return plainText;
+  try {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_SECRET), iv);
+    let encrypted = cipher.update(plainText, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return `enc::${iv.toString('hex')}::${encrypted}`;
+  } catch (e) {
+    return plainText;
+  }
+}
+
+export function decryptSecret(cipherText: string): string {
+  if (!cipherText || !cipherText.startsWith('enc::')) return cipherText;
+  try {
+    const parts = cipherText.split('::');
+    if (parts.length !== 3) return cipherText;
+    const iv = Buffer.from(parts[1], 'hex');
+    const encryptedData = parts[2];
+    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_SECRET), iv);
+    let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (e) {
+    return cipherText;
+  }
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -35,6 +72,15 @@ let db: DB | null = null;
 if (supabaseUrl && supabaseServiceKey) {
   db = createClient(supabaseUrl, supabaseServiceKey) as DB;
   console.log('[VelvetDesk] Supabase connected ✅');
+  const client = db;
+  // Auto-initialize vault_media bucket in Supabase Storage if missing
+  client.storage.getBucket('vault_media').then(({ data, error }) => {
+    if (error || !data) {
+      client.storage.createBucket('vault_media', { public: true }).then(() => {
+        console.log('[Supabase] Bucket vault_media auto-created successfully');
+      }).catch(() => {});
+    }
+  }).catch(() => {});
 } else {
   console.warn('[VelvetDesk] Supabase env vars missing — running without DB');
 }
@@ -216,8 +262,8 @@ async function startServer() {
     const { data, error } = await database.from('channels').select('*').order('name');
     if (error) return res.status(500).json({ error: error.message });
 
-    const channels = data || [];
-    const hasOnlyFans = channels.some((c: any) => c.id === 'onlyfans');
+    const rawChannels = data || [];
+    const hasOnlyFans = rawChannels.some((c: any) => c.id === 'onlyfans');
     if (!hasOnlyFans) {
       const ofRow = {
         id: 'onlyfans',
@@ -232,8 +278,15 @@ async function startServer() {
         auth_method: 'session_cookie',
       };
       database.from('channels').upsert(ofRow).then(() => {}, () => {});
-      channels.unshift(ofRow);
+      rawChannels.unshift(ofRow);
     }
+
+    const channels = rawChannels.map((ch: any) => ({
+      ...ch,
+      api_key_or_token: ch.api_key_or_token ? '••••••••' : null,
+      session_cookie: ch.session_cookie ? '••••••••' : null,
+      has_credentials: Boolean(ch.api_key_or_token || ch.session_cookie || ch.credential_info),
+    }));
 
     res.json(channels);
   });
@@ -243,14 +296,17 @@ async function startServer() {
     const { id } = req.params;
     const { credentialInfo, accountUsername, status, apiKeyOrToken, sessionCookie } = req.body;
 
+    const encryptedToken = apiKeyOrToken ? encryptSecret(apiKeyOrToken) : null;
+    const encryptedCookie = sessionCookie ? encryptSecret(sessionCookie) : null;
+
     const { data, error } = await database
       .from('channels')
       .update({
         credential_info: credentialInfo,
         account_username: accountUsername,
         status,
-        api_key_or_token: apiKeyOrToken,
-        session_cookie: sessionCookie,
+        api_key_or_token: encryptedToken,
+        session_cookie: encryptedCookie,
         last_sync_time: 'En tiempo real',
         updated_at: new Date().toISOString(),
       })
@@ -265,7 +321,12 @@ async function startServer() {
       await restartChannelIntegration(id, data);
     }
 
-    res.json(data);
+    res.json({
+      ...data,
+      api_key_or_token: data.api_key_or_token ? '••••••••' : null,
+      session_cookie: data.session_cookie ? '••••••••' : null,
+      has_credentials: Boolean(data.api_key_or_token || data.session_cookie || data.credential_info),
+    });
   });
 
   app.post('/api/channels/:id/refresh', async (req, res) => {
@@ -288,14 +349,17 @@ async function startServer() {
         break;
       case 'onlyfans': {
         const { data: ch } = await database.from('channels').select('status, session_cookie, api_key_or_token').eq('id', id).single();
-        isReallyConnected = ch?.status === 'connected' && Boolean(ch?.session_cookie || ch?.api_key_or_token);
+        const plainCookie = decryptSecret(ch?.session_cookie || '');
+        const plainToken = decryptSecret(ch?.api_key_or_token || '');
+        isReallyConnected = ch?.status === 'connected' && Boolean(plainCookie || plainToken);
         latencyMs = isReallyConnected ? Date.now() - t0 + 25 : 0;
         break;
       }
       default: {
         // For API-based pollers: try to verify by checking DB status
         const { data: ch } = await database.from('channels').select('status, api_key_or_token').eq('id', id).single();
-        isReallyConnected = ch?.status === 'connected' && Boolean(ch?.api_key_or_token);
+        const plainToken = decryptSecret(ch?.api_key_or_token || '');
+        isReallyConnected = ch?.status === 'connected' && Boolean(plainToken);
         latencyMs = isReallyConnected ? Date.now() - t0 + 30 : 0;
       }
     }
@@ -1314,43 +1378,46 @@ async function initChannelIntegrations() {
 }
 
 async function restartChannelIntegration(id: string, channelData: any) {
+  const plainToken = decryptSecret(channelData?.api_key_or_token || '');
+  const plainCookie = decryptSecret(channelData?.session_cookie || '');
+
   switch (id) {
     case 'onlyfans':
-      if (channelData.session_cookie || channelData.api_key_or_token) {
-        await startOnlyFansPoller(channelData.session_cookie || channelData.api_key_or_token, db!);
+      if (plainCookie || plainToken) {
+        await startOnlyFansPoller(plainCookie || plainToken, db!);
       }
       break;
     case 'telegram':
-      if (channelData.api_key_or_token) {
-        await startTelegramBot(channelData.api_key_or_token, db!);
+      if (plainToken) {
+        await startTelegramBot(plainToken, db!);
       }
       break;
     case 'whatsapp':
       await startWhatsAppBot(db!);
       break;
     case 'fansly':
-      if (channelData.api_key_or_token) {
-        await startFanslyPoller(channelData.api_key_or_token, db!);
+      if (plainToken) {
+        await startFanslyPoller(plainToken, db!);
       }
       break;
     case 'scatbook':
-      if (channelData.api_key_or_token) {
-        await startScatbookPoller(channelData.api_key_or_token, db!);
+      if (plainToken) {
+        await startScatbookPoller(plainToken, db!);
       }
       break;
     case 'manyvids':
-      if (channelData.session_cookie) {
-        await startManyVidsPoller(channelData.session_cookie, db!);
+      if (plainCookie) {
+        await startManyVidsPoller(plainCookie, db!);
       }
       break;
     case 'pornhub':
-      if (channelData.session_cookie) {
-        await startPornhubPoller(channelData.session_cookie, db!);
+      if (plainCookie) {
+        await startPornhubPoller(plainCookie, db!);
       }
       break;
     case 'vipweb':
-      if (channelData.api_key_or_token) {
-        await startVIPwebPoller(channelData.api_key_or_token, db!);
+      if (plainToken) {
+        await startVIPwebPoller(plainToken, db!);
       }
       break;
   }
