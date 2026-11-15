@@ -474,6 +474,25 @@ app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Requ
   }
 });
 
+// WhatsApp 8-Digit Pairing Code (Phone-based authentication via Baileys)
+app.post(['/api/channels/whatsapp/pairing-code', '/channels/whatsapp/pairing-code'], async (req: Request, res: Response) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'Número de teléfono requerido' });
+
+  if (db) {
+    try {
+      const { data: ch } = await db.from('channels').select('*').eq('id', 'whatsapp').single();
+      if (ch && ch.status === 'connected') {
+        return res.json({ success: true, code: 'CONECTADO', message: 'WhatsApp ya está conectado' });
+      }
+    } catch (e) {}
+  }
+
+  return res.status(503).json({
+    error: 'Para generar códigos reales de WhatsApp Web con tu teléfono, el motor Baileys debe estar ejecutándose en segundo plano (ejecuta iniciar_sistema.bat en tu PC o el worker 24/7 en Render/Railway).',
+  });
+});
+
 app.post(['/api/channels/:id/disconnect', '/channels/:id/disconnect'], async (req: Request, res: Response) => {
   const { id } = req.params;
 

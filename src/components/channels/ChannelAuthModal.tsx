@@ -57,8 +57,10 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
   const [activeMethod, setActiveMethod] = useState<'qr' | 'token' | 'credentials'>('qr');
 
   // WhatsApp states
-  const [waPhone, setWaPhone] = useState('+1 (305) 555-0199');
-  const [pairingCode, setPairingCode] = useState('8K29-4XLP');
+  const [waPhone, setWaPhone] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
+  const [isRequestingPairingCode, setIsRequestingPairingCode] = useState(false);
+  const [pairingCodeError, setPairingCodeError] = useState<string | null>(null);
   const [qrCounter, setQrCounter] = useState(45);
 
   // Form inputs for credentials
@@ -447,32 +449,85 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                     <label className="block text-xs font-medium text-slate-300 mb-1">
                       Número Telefónico de WhatsApp (con código de país)
                     </label>
-                    <input
-                      type="text"
-                      value={waPhone}
-                      onChange={(e) => setWaPhone(e.target.value)}
-                      placeholder="+34 611 234 567"
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={waPhone}
+                        onChange={(e) => {
+                          setWaPhone(e.target.value);
+                          setPairingCodeError(null);
+                        }}
+                        placeholder="+34611234567 o +573001234567"
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        disabled={isRequestingPairingCode || !waPhone}
+                        onClick={async () => {
+                          if (!waPhone.trim()) {
+                            setPairingCodeError('Ingresa tu número con código de país (ej: +573001234567)');
+                            return;
+                          }
+                          setIsRequestingPairingCode(true);
+                          setPairingCodeError(null);
+                          try {
+                            const res = await fetch('/api/channels/whatsapp/pairing-code', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ phone: waPhone }),
+                            });
+                            const data = await res.json();
+                            if (data.success && data.code) {
+                              setPairingCode(data.code);
+                            } else {
+                              setPairingCodeError(data.error || 'No se pudo generar el código.');
+                            }
+                          } catch (e: any) {
+                            setPairingCodeError('No se pudo conectar al servidor de WhatsApp. Asegúrate de ejecutar iniciar_sistema.bat para el motor Baileys.');
+                          } finally {
+                            setIsRequestingPairingCode(false);
+                          }
+                        }}
+                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        {isRequestingPairingCode ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Solicitando...</span>
+                          </>
+                        ) : (
+                          <span>Solicitar Código</span>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-mono block">Código de Vinculación</span>
-                      <span className="text-lg font-bold font-mono text-emerald-400 tracking-wider">
-                        {pairingCode}
-                      </span>
+                  {pairingCodeError && (
+                    <div className="p-2.5 bg-red-950/40 border border-red-800/60 rounded-xl text-[11px] text-red-300">
+                      ⚠️ {pairingCodeError}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setPairingCode(`${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`)}
-                      className="text-xs text-slate-400 hover:text-white p-1 rounded cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  )}
+
+                  {pairingCode ? (
+                    <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-emerald-400 uppercase font-mono block">Código para tu Teléfono</span>
+                        <span className="text-xl font-black font-mono text-white tracking-widest">
+                          {pairingCode}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-emerald-400 font-medium">
+                        Listo para ingresar en WhatsApp
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-900/60 border border-slate-800/60 rounded-xl text-[11px] text-slate-400">
+                      Ingresa tu número arriba y pulsa <strong>"Solicitar Código"</strong> para recibir el código de vinculación de 8 dígitos en WhatsApp.
+                    </div>
+                  )}
+
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Introduce este código en la notificación de WhatsApp que aparecerá en tu teléfono para autorizar la conexión.
+                    Abre WhatsApp en tu teléfono → <strong>Dispositivos vinculados</strong> → <strong>Vincular con número de teléfono</strong> e ingresa el código.
                   </p>
 
                   <button
@@ -481,7 +536,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                     className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg shadow-emerald-600/20"
                   >
                     <Phone className="w-3.5 h-3.5" />
-                    <span>Vincular WhatsApp con este Teléfono</span>
+                    <span>Guardar y Sincronizar Estado</span>
                   </button>
                 </div>
               )}
