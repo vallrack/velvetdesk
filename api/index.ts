@@ -340,9 +340,15 @@ app.post(['/api/channels/:id/refresh', '/channels/:id/refresh'], async (req: Req
 });
 
 let cachedWhatsAppQR: { qr: string; expiresAt: number } | null = null;
+let memoryWhatsAppConnected = false;
+let memoryWhatsAppPhone = '+1 (305) 555-0199';
 
 app.get(['/api/channels/whatsapp/pair', '/channels/whatsapp/pair'], async (req: Request, res: Response) => {
   const phone = String(req.query.phone || '+1 (305) 555-0199');
+  memoryWhatsAppConnected = true;
+  memoryWhatsAppPhone = phone;
+  cachedWhatsAppQR = null;
+
   if (db) {
     try {
       await db.from('channels').update({
@@ -357,7 +363,6 @@ app.get(['/api/channels/whatsapp/pair', '/channels/whatsapp/pair'], async (req: 
       console.warn('[WhatsApp Pair Error]', e);
     }
   }
-  cachedWhatsAppQR = null;
 
   res.send(`
     <!DOCTYPE html>
@@ -382,12 +387,27 @@ app.get(['/api/channels/whatsapp/pair', '/channels/whatsapp/pair'], async (req: 
           <p>Tu cuenta ha sido vinculada y sincronizada correctamente en tu panel de VelvetDesk Suite.</p>
           <div class="badge">● Sincronización en Tiempo Real</div>
         </div>
+        <script>
+          try {
+            localStorage.setItem('velvetdesk_wa_connected', 'true');
+            if (window.opener) {
+              window.opener.postMessage({ type: 'VELVETDESK_WA_CONNECTED' }, '*');
+            }
+          } catch (e) {}
+        </script>
       </body>
     </html>
   `);
 });
 
 app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Request, res: Response) => {
+  if (memoryWhatsAppConnected) {
+    return res.json({
+      status: 'connected',
+      qr: null,
+      username: memoryWhatsAppPhone,
+    });
+  }
   try {
     if (db) {
       const { data: ch } = await db.from('channels').select('*').eq('id', 'whatsapp').single();

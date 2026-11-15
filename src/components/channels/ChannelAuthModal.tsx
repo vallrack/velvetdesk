@@ -87,29 +87,62 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
   useEffect(() => {
     let timer: any;
     let fetchTimer: any;
-    if (isOpen && activePlatform === 'whatsapp' && activeMethod === 'qr') {
+
+    const triggerConnected = () => {
+      setQrDataUrl(null);
+      setVerifiedSuccess(true);
+      onSaveCredentials('whatsapp', {
+        credentialInfo: waPhone || '+1 (305) 555-0199',
+        accountUsername: waPhone || '+1 (305) 555-0199',
+        status: 'connected',
+      });
+      setTimeout(() => {
+        setVerifiedSuccess(false);
+        onClose();
+      }, 1000);
+    };
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data?.type === 'VELVETDESK_WA_CONNECTED') {
+        triggerConnected();
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'velvetdesk_wa_connected' && e.newValue === 'true') {
+        localStorage.removeItem('velvetdesk_wa_connected');
+        triggerConnected();
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    window.addEventListener('storage', handleStorage);
+
+    if (isOpen && activePlatform === 'whatsapp') {
+      // Check if already connected in localStorage
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('velvetdesk_wa_connected') === 'true') {
+        localStorage.removeItem('velvetdesk_wa_connected');
+        triggerConnected();
+      }
+
       timer = setInterval(() => {
         setQrCounter((prev) => (prev > 1 ? prev - 1 : 60));
       }, 1000);
       
       const fetchQR = async () => {
         try {
+          if (typeof localStorage !== 'undefined' && localStorage.getItem('velvetdesk_wa_connected') === 'true') {
+            localStorage.removeItem('velvetdesk_wa_connected');
+            triggerConnected();
+            return;
+          }
+
           const res = await fetch('/api/channels/whatsapp/qr');
           const data = await res.json();
 
           // ── Instant connection auto-detection! ──
           if (data.status === 'connected') {
-            setQrDataUrl(null);
-            setVerifiedSuccess(true);
-            onSaveCredentials('whatsapp', {
-              credentialInfo: data.username ? `+${data.username}` : (waPhone || '+1 (305) 555-0199'),
-              accountUsername: data.username ? `+${data.username}` : (waPhone || '+1 (305) 555-0199'),
-              status: 'connected',
-            });
-            setTimeout(() => {
-              setVerifiedSuccess(false);
-              onClose();
-            }, 1800);
+            triggerConnected();
             return;
           }
 
@@ -122,13 +155,16 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
       };
       
       fetchQR();
-      fetchTimer = setInterval(fetchQR, 2500);
+      fetchTimer = setInterval(fetchQR, 2000);
     }
+
     return () => {
       clearInterval(timer);
       clearInterval(fetchTimer);
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
     };
-  }, [isOpen, activePlatform, activeMethod]);
+  }, [isOpen, activePlatform, activeMethod, waPhone, onClose, onSaveCredentials]);
 
   if (!isOpen) return null;
 
@@ -136,36 +172,35 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
 
   const handleTestAndConnect = () => {
     setIsVerifying(true);
+    let credInfo = '';
+    if (activePlatform === 'whatsapp') {
+      credInfo = waPhone || '+1 (305) 555-0199';
+    } else if (activePlatform === 'telegram') {
+      credInfo = usernameOrEmail || (apiToken ? `Bot: ${apiToken.substring(0, 10)}...` : '@VelvetGoddess_bot');
+    } else if (activePlatform === 'onlyfans') {
+      credInfo = usernameOrEmail ? (usernameOrEmail.includes('@') ? usernameOrEmail : `@${usernameOrEmail.replace('@', '')}`) : (sessionCookie || apiToken ? `Token: ${(sessionCookie || apiToken).substring(0, 10)}...` : 'OnlyFans Conectado');
+    } else if (activePlatform === 'fansly') {
+      credInfo = apiToken ? `Token: ${apiToken.substring(0, 10)}...` : `Token: fan_live_${Math.random().toString(36).substring(2, 7)}...`;
+    } else {
+      credInfo = usernameOrEmail ? `Usuario: ${usernameOrEmail}` : 'Sesión Activa Sincronizada';
+    }
+
+    onSaveCredentials(activePlatform, {
+      credentialInfo: credInfo,
+      accountUsername: activePlatform === 'whatsapp' ? (waPhone || '+1 (305) 555-0199') : (usernameOrEmail || '@velvet_creator'),
+      status: 'connected',
+      apiKeyOrToken: apiToken || undefined,
+      sessionCookie: sessionCookie || (activePlatform === 'manyvids' || activePlatform === 'pornhub' || activePlatform === 'onlyfans' ? password : undefined),
+    });
+
     setTimeout(() => {
       setIsVerifying(false);
       setVerifiedSuccess(true);
-
-      let credInfo = '';
-      if (activePlatform === 'whatsapp') {
-        credInfo = waPhone || '+1 (305) 555-0199';
-      } else if (activePlatform === 'telegram') {
-        credInfo = usernameOrEmail || (apiToken ? `Bot: ${apiToken.substring(0, 10)}...` : '@VelvetGoddess_bot');
-      } else if (activePlatform === 'onlyfans') {
-        credInfo = usernameOrEmail ? (usernameOrEmail.includes('@') ? usernameOrEmail : `@${usernameOrEmail.replace('@', '')}`) : (sessionCookie || apiToken ? `Token: ${(sessionCookie || apiToken).substring(0, 10)}...` : 'OnlyFans Conectado');
-      } else if (activePlatform === 'fansly') {
-        credInfo = apiToken ? `Token: ${apiToken.substring(0, 10)}...` : `Token: fan_live_${Math.random().toString(36).substring(2, 7)}...`;
-      } else {
-        credInfo = usernameOrEmail ? `Usuario: ${usernameOrEmail}` : 'Sesión Activa Sincronizada';
-      }
-
-      onSaveCredentials(activePlatform, {
-        credentialInfo: credInfo,
-        accountUsername: activePlatform === 'whatsapp' ? (waPhone || '+1 (305) 555-0199') : (usernameOrEmail || '@velvet_creator'),
-        status: 'connected',
-        apiKeyOrToken: apiToken || undefined,
-        sessionCookie: sessionCookie || (activePlatform === 'manyvids' || activePlatform === 'pornhub' || activePlatform === 'onlyfans' ? password : undefined),
-      });
-
       setTimeout(() => {
         setVerifiedSuccess(false);
         onClose();
-      }, 1400);
-    }, 1500);
+      }, 700);
+    }, 400);
   };
 
   const handleSecurityDisconnect = async () => {

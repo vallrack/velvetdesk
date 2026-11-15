@@ -47,6 +47,14 @@ export function getWhatsAppUser(): string | null {
   return sock?.user?.id?.split(':')[0] || null;
 }
 
+export async function requestWhatsAppPairingCode(phoneNumber: string): Promise<string> {
+  const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+  if (!sock) {
+    throw new Error('El motor de WhatsApp todavía no está listo. Por favor espera unos segundos.');
+  }
+  return await sock.requestPairingCode(cleanPhone);
+}
+
 export async function startWhatsAppBot(db: DB, forceFresh = false) {
   if (isConnected && sock) {
     console.log('[WhatsApp] Already connected.');
@@ -59,11 +67,17 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
   isStarting = true;
 
   console.log(`[WhatsApp] Starting Baileys connection (forceFresh=${forceFresh})...`);
-  await db.from('channels').update({
-    status: 'reconnecting',
-    last_sync_time: 'Conectando...',
-    updated_at: new Date().toISOString(),
-  }).eq('id', 'whatsapp');
+  try {
+    if (db) {
+      await db.from('channels').update({
+        status: 'reconnecting',
+        last_sync_time: 'Conectando...',
+        updated_at: new Date().toISOString(),
+      }).eq('id', 'whatsapp');
+    }
+  } catch (err: any) {
+    console.warn('[WhatsApp] Supabase status warning:', err.message);
+  }
 
   // Pre-auth sanity check: If wa-session has corrupt or unregistered credentials, wipe it
   try {
@@ -139,13 +153,15 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
       currentQR = qr;
       isStarting = false;
       console.log('[WhatsApp] QR Code ready — scan it in the app');
-      QRCode.toDataURL(qr).then((dataUrl) => {
-        db.from('channels').update({
-          api_key_or_token: dataUrl,
-          last_sync_time: 'QR generado',
-          updated_at: new Date().toISOString(),
-        }).eq('id', 'whatsapp').then(() => {});
-      }).catch(() => {});
+      if (db) {
+        QRCode.toDataURL(qr).then((dataUrl) => {
+          db.from('channels').update({
+            api_key_or_token: dataUrl,
+            last_sync_time: 'Baileys Live QR',
+            updated_at: new Date().toISOString(),
+          }).eq('id', 'whatsapp').then(() => {}, () => {});
+        }).catch(() => {});
+      }
     }
 
     if (connection === 'close') {
@@ -191,14 +207,16 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
       reconnectAttempts = 0; // Reset counter on successful connection
       console.log('[WhatsApp] Connected ✅');
       const userPhone = sock?.user?.id?.split(':')[0] || '';
-      await db.from('channels').update({
-        status: 'connected',
-        last_sync_time: 'En tiempo real',
-        account_username: userPhone,
-        credential_info: userPhone ? `+${userPhone}` : 'Conectado',
-        api_key_or_token: null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', 'whatsapp');
+      if (db) {
+        db.from('channels').update({
+          status: 'connected',
+          last_sync_time: 'En tiempo real',
+          account_username: userPhone,
+          credential_info: userPhone ? `+${userPhone}` : 'Conectado',
+          api_key_or_token: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', 'whatsapp').then(() => {}, () => {});
+      }
     }
   });
 

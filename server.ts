@@ -16,7 +16,7 @@ import type { DB } from './src/integrations/types.js';
 // Channel integrations
 import { startOnlyFansPoller, stopOnlyFansPoller, disconnectOnlyFans } from './src/integrations/onlyfans.js';
 import { startTelegramBot, stopTelegramBot, disconnectTelegram, sendTelegramMessage, isTelegramConnected } from './src/integrations/telegram.js';
-import { startWhatsAppBot, getWhatsAppQR, stopWhatsAppBot, disconnectWhatsApp, sendWhatsAppMessage, isWhatsAppConnected, getWhatsAppUser, isWhatsAppStarting } from './src/integrations/whatsapp.js';
+import { startWhatsAppBot, getWhatsAppQR, stopWhatsAppBot, disconnectWhatsApp, sendWhatsAppMessage, isWhatsAppConnected, getWhatsAppUser, isWhatsAppStarting, requestWhatsAppPairingCode } from './src/integrations/whatsapp.js';
 import { startFanslyPoller, stopFanslyPoller, disconnectFansly } from './src/integrations/fansly.js';
 import { startScatbookPoller, stopScatbookPoller, disconnectScatbook } from './src/integrations/scatbook.js';
 import { startManyVidsPoller, stopManyVidsPoller, disconnectManyVids } from './src/integrations/manyvids.js';
@@ -146,6 +146,7 @@ const publicPaths = [
   '/api/auth/me',
   '/api/channels/whatsapp/pair',
   '/api/channels/whatsapp/qr',
+  '/api/channels/whatsapp/pairing-code',
 ];
 
 // Public anon client used ONLY for token validation
@@ -429,6 +430,14 @@ async function startServer() {
             <p>Tu cuenta ha sido vinculada y sincronizada correctamente en tu panel de VelvetDesk Suite.</p>
             <div class="badge">● Sincronización en Tiempo Real</div>
           </div>
+          <script>
+            try {
+              localStorage.setItem('velvetdesk_wa_connected', 'true');
+              if (window.opener) {
+                window.opener.postMessage({ type: 'VELVETDESK_WA_CONNECTED' }, '*');
+              }
+            } catch (e) {}
+          </script>
         </body>
       </html>
     `);
@@ -456,6 +465,24 @@ async function startServer() {
       res.json({ status: 'pending', qr: url });
     } catch (e) {
       res.json({ status: 'waiting', qr: null });
+    }
+  });
+
+  // WhatsApp 8-Digit Pairing Code (Phone-based authentication via Baileys)
+  app.post('/api/channels/whatsapp/pairing-code', async (req, res) => {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Número de teléfono requerido' });
+
+    try {
+      if (db && !isWhatsAppConnected() && !isWhatsAppStarting() && !getWhatsAppQR()) {
+        await startWhatsAppBot(db, false);
+      }
+      const code = await requestWhatsAppPairingCode(phone);
+      console.log(`[WhatsApp] Pairing code generated for ${phone}: ${code} ✅`);
+      res.json({ success: true, code });
+    } catch (err: any) {
+      console.error('[WhatsApp] Pairing code generation error:', err.message);
+      res.status(500).json({ error: err.message || 'Error generando código de vinculación con WhatsApp' });
     }
   });
 

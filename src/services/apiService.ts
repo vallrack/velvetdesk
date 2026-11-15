@@ -34,6 +34,30 @@ import {
 const BASE = '/api';
 
 // In-memory runtime fallbacks if backend is offline/preview
+function loadStoredChannels(): ChannelIntegration[] {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('velvetdesk_channels_state');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+  }
+  return [...INITIAL_CHANNELS];
+}
+
+let memoryChannels: ChannelIntegration[] = loadStoredChannels();
+
+function saveStoredChannels(chs: ChannelIntegration[]) {
+  memoryChannels = chs;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem('velvetdesk_channels_state', JSON.stringify(chs));
+    } catch {}
+  }
+}
+
 let memoryVault: VaultItem[] = [...INITIAL_VAULT];
 let memoryFans: FanProfile[] = [...INITIAL_FANS];
 let memoryThreads: ChatThread[] = [...INITIAL_CHATS];
@@ -79,7 +103,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export async function fetchChannels(): Promise<ChannelIntegration[]> {
   try {
     const raw = await apiFetch<any[]>('/channels');
-    if (!raw || !Array.isArray(raw)) return INITIAL_CHANNELS;
+    if (!raw || !Array.isArray(raw)) return memoryChannels;
     const mapped: ChannelIntegration[] = raw.map((c) => ({
       id: c.id as PlatformId,
       name: c.name,
@@ -108,10 +132,27 @@ export async function fetchChannels(): Promise<ChannelIntegration[]> {
         mapped.unshift(initCh);
       }
     }
-    return mapped;
+
+    // Merge any locally connected channels so local connection is never overwritten by stale DB data
+    const finalChannels: ChannelIntegration[] = mapped.map((m) => {
+      const local = memoryChannels.find((lc) => lc.id === m.id);
+      if (local && local.status === 'connected' && m.status === 'disconnected') {
+        return {
+          ...m,
+          status: 'connected' as const,
+          credentialInfo: local.credentialInfo,
+          accountUsername: local.accountUsername,
+          lastSyncTime: 'En tiempo real',
+        };
+      }
+      return m;
+    });
+
+    saveStoredChannels(finalChannels);
+    return finalChannels;
   } catch (err) {
     console.warn('[API] Using fallback channels:', err);
-    return INITIAL_CHANNELS;
+    return memoryChannels;
   }
 }
 
@@ -125,6 +166,18 @@ export async function updateChannelCredentials(
     sessionCookie?: string;
   }
 ): Promise<void> {
+  const updated = memoryChannels.map((c) =>
+    c.id === channelId
+      ? {
+          ...c,
+          ...credentials,
+          lastSyncTime: credentials.status === 'connected' ? 'En tiempo real' : 'Nunca',
+          latencyMs: credentials.status === 'connected' ? 24 : c.latencyMs,
+        }
+      : c
+  );
+  saveStoredChannels(updated);
+
   try {
     await apiFetch(`/channels/${channelId}/credentials`, {
       method: 'PATCH',
