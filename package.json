@@ -9,7 +9,6 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "postinstall": "node -e \"try { const p = require('path').resolve('node_modules/whatsapp-rust-bridge/package.json'); const fs = require('fs'); const j = JSON.parse(fs.readFileSync(p)); j.main = './dist/index.js'; j.exports['.'] = { import: './dist/index.js', require: './dist/index.js', default: './dist/index.js', types: './dist/index.d.ts' }; fs.writeFileSync(p, JSON.stringify(j, null, 4)); } catch(e){}\"",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
