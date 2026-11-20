@@ -162,6 +162,8 @@ const publicPaths = [
   '/api/channels/whatsapp/pair',
   '/api/channels/whatsapp/qr',
   '/api/channels/whatsapp/pairing-code',
+  '/api/channels/whatsapp/disconnect',
+  '/api/channels/whatsapp/logout',
 ];
 
 // Public anon client used ONLY for token validation
@@ -180,6 +182,8 @@ async function authMiddleware(
 ) {
   // Skip auth for public/static paths
   const isPublic = publicPaths.includes(req.path)
+    || req.path.endsWith('/disconnect')
+    || req.path.startsWith('/api/channels/whatsapp')
     || req.path.startsWith('/api/webhook')
     || req.path.startsWith('/audio')
     || !req.path.startsWith('/api');
