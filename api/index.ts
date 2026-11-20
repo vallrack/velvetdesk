@@ -400,6 +400,13 @@ app.get(['/api/channels/whatsapp/pair', '/channels/whatsapp/pair'], async (req: 
   `);
 });
 
+const WHATSAPP_DAEMON_URL = (
+  process.env.WHATSAPP_DAEMON_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  process.env.RENDER_URL ||
+  ''
+).replace(/\/$/, '');
+
 app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Request, res: Response) => {
   if (memoryWhatsAppConnected) {
     return res.json({
@@ -408,6 +415,22 @@ app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Requ
       username: memoryWhatsAppPhone,
     });
   }
+
+  // 1. If a live cloud daemon URL is configured (e.g. on Render), proxy the live QR directly
+  if (WHATSAPP_DAEMON_URL) {
+    try {
+      const daemonRes = await fetch(`${WHATSAPP_DAEMON_URL}/api/channels/whatsapp/qr`, {
+        signal: AbortSignal.timeout(6000),
+      });
+      if (daemonRes.ok) {
+        const daemonData = await daemonRes.json();
+        return res.json(daemonData);
+      }
+    } catch (e) {
+      console.warn('[WhatsApp Daemon Proxy Warning]:', e);
+    }
+  }
+
   try {
     if (db) {
       const { data: ch } = await db.from('channels').select('*').eq('id', 'whatsapp').single();
@@ -418,8 +441,13 @@ app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Requ
           username: ch.account_username || ch.credential_info || '+1 (305) 555-0199',
         });
       }
+
+      // Check if QR in Supabase was generated recently (max 45 seconds old)
+      const updatedAtMs = ch?.updated_at ? new Date(ch.updated_at).getTime() : 0;
+      const isFresh = (Date.now() - updatedAtMs) < 45_000;
+
       // If Render daemon or local daemon has pushed a live Baileys QR data URL into Supabase
-      if (ch && ch.api_key_or_token && ch.api_key_or_token.startsWith('data:image/')) {
+      if (ch && ch.api_key_or_token && ch.api_key_or_token.startsWith('data:image/') && isFresh) {
         return res.json({
           status: 'pending',
           qr: ch.api_key_or_token,
@@ -428,11 +456,11 @@ app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Requ
       }
     }
 
-    // If no live Baileys QR is ready yet in Supabase, signal waiting state
+    // If no live Baileys QR is ready yet in Supabase or it expired
     res.json({
       status: 'waiting',
       qr: null,
-      message: 'Iniciando conexión con WhatsApp Web... El código QR oficial se generará en unos instantes.',
+      message: 'Esperando código QR en vivo... Asegúrate de que iniciar_sistema.bat o el servicio en Render esté activo.',
     });
   } catch (err: any) {
     console.error('[WhatsApp QR Error]', err);
@@ -445,6 +473,22 @@ app.post(['/api/channels/whatsapp/pairing-code', '/channels/whatsapp/pairing-cod
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'Número de teléfono requerido' });
 
+  // 1. If cloud daemon is configured, proxy the pairing code generation
+  if (WHATSAPP_DAEMON_URL) {
+    try {
+      const daemonRes = await fetch(`${WHATSAPP_DAEMON_URL}/api/channels/whatsapp/pairing-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const data = await daemonRes.json();
+      return res.status(daemonRes.status).json(data);
+    } catch (e: any) {
+      console.warn('[WhatsApp Daemon Pairing Proxy Warning]:', e.message);
+    }
+  }
+
   if (db) {
     try {
       const { data: ch } = await db.from('channels').select('*').eq('id', 'whatsapp').single();
@@ -455,7 +499,7 @@ app.post(['/api/channels/whatsapp/pairing-code', '/channels/whatsapp/pairing-cod
   }
 
   return res.status(503).json({
-    error: 'Para generar códigos reales de WhatsApp Web con tu teléfono, el motor Baileys debe estar ejecutándose en segundo plano (ejecuta iniciar_sistema.bat en tu PC o el worker 24/7 en Render/Railway).',
+    error: 'Para generar códigos reales de WhatsApp Web con tu teléfono, el motor Baileys debe estar ejecutándose en segundo plano (ejecuta iniciar_sistema.bat en tu PC o abre el servicio 24/7 en Render).',
   });
 });
 
