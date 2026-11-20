@@ -137,7 +137,22 @@ export default function App() {
     if (!authUser) return;
     loadInitialData();
     setupRealtimeSubscriptions();
-    return () => teardownRealtimeSubscriptions();
+
+    // ─── Polling fallback (every 15s) in case Supabase Realtime drops ────────
+    // This ensures the inbox always updates even if the WebSocket connection is lost.
+    const pollInterval = setInterval(async () => {
+      try {
+        const freshThreads = await api.fetchThreads();
+        setThreads(freshThreads);
+      } catch (e) {
+        // Silent — Realtime is the primary mechanism
+      }
+    }, 15_000);
+
+    return () => {
+      clearInterval(pollInterval);
+      teardownRealtimeSubscriptions();
+    };
   }, [authUser?.id]);
 
   async function loadInitialData() {

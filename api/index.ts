@@ -194,7 +194,7 @@ app.patch(['/api/channels/:id/credentials', '/channels/:id/credentials'], async 
 
   let finalCredInfo = credentialInfo;
   if (!finalCredInfo) {
-    if (id === 'whatsapp') finalCredInfo = accountUsername || '+1 (305) 555-0199';
+    if (id === 'whatsapp') finalCredInfo = accountUsername || 'WhatsApp Conectado';
     else if (id === 'telegram') finalCredInfo = verifiedUsername || '@Velvet_Bot';
     else finalCredInfo = 'Sesión Activa Sincronizada';
   }
@@ -341,10 +341,10 @@ app.post(['/api/channels/:id/refresh', '/channels/:id/refresh'], async (req: Req
 
 let cachedWhatsAppQR: { qr: string; expiresAt: number } | null = null;
 let memoryWhatsAppConnected = false;
-let memoryWhatsAppPhone = '+1 (305) 555-0199';
+let memoryWhatsAppPhone = '';
 
 app.get(['/api/channels/whatsapp/pair', '/channels/whatsapp/pair'], async (req: Request, res: Response) => {
-  const phone = String(req.query.phone || '+1 (305) 555-0199');
+  const phone = String(req.query.phone || '');
   memoryWhatsAppConnected = true;
   memoryWhatsAppPhone = phone;
   cachedWhatsAppQR = null;
@@ -438,7 +438,7 @@ app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Requ
         return res.json({
           status: 'connected',
           qr: null,
-          username: ch.account_username || ch.credential_info || '+1 (305) 555-0199',
+          username: ch.account_username || ch.credential_info || 'WhatsApp Conectado',
         });
       }
 

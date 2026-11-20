@@ -307,6 +307,7 @@ export async function synthesizeTts(
 function buildFallbackReply(params: BotReplyParams): string {
   const lastMsg = (params.messages[params.messages.length - 1]?.text || '').toLowerCase();
   const fanName = params.fanName || 'amor';
+  const msgCount = params.messages.length;
 
   for (const rule of params.rules || []) {
     if (!rule.enabled) continue;
@@ -320,11 +321,37 @@ function buildFallbackReply(params: BotReplyParams): string {
     }
   }
 
-  if (lastMsg.includes('precio') || lastMsg.includes('cuanto') || lastMsg.includes('menu')) {
+  if (lastMsg.includes('precio') || lastMsg.includes('cuanto') || lastMsg.includes('cuánto') || lastMsg.includes('menu') || lastMsg.includes('menú')) {
     const item = params.vaultMenu?.[0];
     return item
       ? `Hola corazón ❤️ Justo tengo disponible el "${item.title}" por solo $${item.price} USD. ¿Te lo envío ya mismo? 🔥`
       : `Hola ${fanName} 💕 Tengo contenido exclusivo esperándote. ¿Quieres ver el menú? ✨`;
+  }
+
+  if (lastMsg.includes('hola') || lastMsg.includes('buenos') || lastMsg.includes('buenas') || lastMsg.includes('hey') || lastMsg.includes('hi ')) {
+    return msgCount > 2
+      ? `¡Qué rico verte de nuevo ${fanName}! 😍 ¿En qué te puedo complacer hoy? 💋`
+      : `¡Hola ${fanName} cariño! 🔥 Qué rico que me escribas. ¿Tienes ganas de portarte mal conmigo hoy? 💋`;
+  }
+
+  if (lastMsg.includes('video') || lastMsg.includes('foto') || lastMsg.includes('pack') || lastMsg.includes('contenido')) {
+    const item = params.vaultMenu?.[0];
+    return item
+      ? `Claro que sí mi amor 🔥 Tengo algo muy especial para ti: "${item.title}" por $${item.price} USD. ¿Lo quieres? 😈`
+      : `Tengo contenido muy hot esperándote ${fanName} 🔥 Dime qué tipo y te lo consigo 💕`;
+  }
+
+  if (lastMsg.includes('dinero') || lastMsg.includes('envié') || lastMsg.includes('pague') || lastMsg.includes('pagué') || lastMsg.includes('transferencia') || lastMsg.includes('pago')) {
+    return `Gracias ${fanName} ❤️ Déjame verificar tu pago y de inmediato te envío tu contenido. ¡Un momento! 🙏`;
+  }
+
+  if (lastMsg.includes('audio') || lastMsg.includes('voz') || lastMsg.includes('nota de voz')) {
+    return `Claro que sí ${fanName} 💋 Te mando una nota de voz ahora mismo con mucho amor 🎙️`;
+  }
+
+  // Context-aware reply for ongoing conversation (not first message)
+  if (msgCount > 2) {
+    return `¡Gracias por escribirme ${fanName}! 💕 Estoy aquí para ti. ¿Qué deseas hoy? 😊`;
   }
 
   return `¡Hola ${fanName} cariño! 🔥 Qué rico que me escribas. ¿Tienes ganas de portarte mal conmigo hoy? 💋`;

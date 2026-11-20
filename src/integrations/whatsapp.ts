@@ -330,7 +330,8 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
           const { data: persona } = await db.from('bot_persona').select('*').eq('id', 1).single();
           const { data: rules } = await db.from('bot_rules').select('*').eq('enabled', true);
           const { data: vault } = await db.from('vault_items').select('id, title, type, price');
-          const { data: msgs } = await db.from('messages').select('sender, text').eq('chat_id', threadId).order('created_at', { ascending: true }).limit(10);
+          // Fetch ALL messages AFTER saving the fan's message so context includes it
+          const { data: msgs } = await db.from('messages').select('sender, text').eq('chat_id', threadId).order('created_at', { ascending: true }).limit(20);
 
           const delay = (persona?.human_typing_delay_seconds || 2) * 1000;
 
