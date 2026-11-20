@@ -404,7 +404,7 @@ const WHATSAPP_DAEMON_URL = (
   process.env.WHATSAPP_DAEMON_URL ||
   process.env.RENDER_EXTERNAL_URL ||
   process.env.RENDER_URL ||
-  ''
+  'https://velvetdesk-daemon.onrender.com'
 ).replace(/\/$/, '');
 
 app.get(['/api/channels/whatsapp/qr', '/channels/whatsapp/qr'], async (req: Request, res: Response) => {
@@ -505,6 +505,15 @@ app.post(['/api/channels/whatsapp/pairing-code', '/channels/whatsapp/pairing-cod
 
 app.post(['/api/channels/:id/disconnect', '/channels/:id/disconnect'], async (req: Request, res: Response) => {
   const { id } = req.params;
+
+  if (id === 'whatsapp' && WHATSAPP_DAEMON_URL) {
+    try {
+      fetch(`${WHATSAPP_DAEMON_URL}/api/channels/whatsapp/disconnect`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(6000),
+      }).catch((e) => console.warn('[WhatsApp Daemon Disconnect Warning]:', e.message));
+    } catch {}
+  }
 
   if (db) {
     try {

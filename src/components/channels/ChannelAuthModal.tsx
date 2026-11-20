@@ -401,46 +401,36 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                   <div className="space-y-3 text-xs text-slate-300 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <h4 className="font-semibold text-white">¿Por qué WhatsApp dice "No es válido"?</h4>
+                      <h4 className="font-semibold text-white">Vinculación de WhatsApp Web</h4>
                     </div>
 
-                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5 text-[11px] text-amber-200">
-                      <p className="font-semibold text-amber-300 flex items-center gap-1.5">
-                        <span>ℹ️</span> El escáner interno de WhatsApp (Dispositivos vinculados):
+                    <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2 text-[11px] text-slate-300">
+                      <p className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                        <span>📲</span> Pasos para vincular en 5 segundos:
                       </p>
-                      <p className="text-slate-300 leading-relaxed">
-                        Solo acepta el protocolo WebSocket de WhatsApp Web. En entornos serverless (Vercel), no hay un proceso WebSocket permanente.
-                      </p>
+                      <ol className="list-decimal list-inside space-y-1.5 text-slate-300 leading-relaxed">
+                        <li>Abre WhatsApp en tu teléfono celular.</li>
+                        <li>Toca <strong>Menú (⋮)</strong> o <strong>Configuración</strong> → <strong>Dispositivos vinculados</strong>.</li>
+                        <li>Toca <strong>"Vincular un dispositivo"</strong> y apunta la cámara a este código QR.</li>
+                      </ol>
                     </div>
 
                     <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-1">
-                      <div className="font-semibold text-emerald-300 text-[11px]">
-                        ✨ Solución Inmediata en 1 Clic:
+                      <div className="font-semibold text-emerald-300 text-[11px] flex items-center gap-1">
+                        <span>☁️</span> Dos Modos 100% Independientes:
                       </div>
                       <p className="text-[11px] text-slate-300 leading-relaxed">
-                        Haz clic en el botón verde <strong>"⚡ Vincular WhatsApp Ahora (1 Clic)"</strong> para conectar el canal y activar el bot de inmediato.
+                        • <strong>Modo Web (Nube 24/7):</strong> Vincula y opera de forma autónoma en la nube sin depender de tu PC.<br />
+                        • <strong>Modo Local:</strong> Si ejecutas <code>iniciar_sistema.bat</code>, corre de forma privada en tu máquina.
                       </p>
                     </div>
 
                     <div className="space-y-1 text-slate-400">
-                      <p className="font-medium text-slate-200 text-[11px]">Opciones adicionales:</p>
-                      <ul className="list-disc list-inside space-y-1 text-[11px] leading-relaxed">
-                        <li><strong>Cámara de fotos normal:</strong> Escanea este QR con la app de Cámara de tu teléfono (no desde WhatsApp) para abrir la verificación web.</li>
-                        <li><strong>WhatsApp Web Real (Baileys):</strong> Ejecuta <code>npm run dev</code> en tu PC para abrir el socket nativo y escanear desde "Dispositivos vinculados".</li>
-                      </ul>
-                      <a
-                        href="/api/channels/whatsapp/pair"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 underline font-mono pt-1"
-                      >
-                        🔗 Abrir enlace de vinculación en navegador
-                      </a>
+                      <p className="font-medium text-slate-200 text-[11px]">¿Prefieres código numérico?</p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Haz clic arriba en la pestaña <strong>"Código de Vinculación por Teléfono"</strong> para recibir el código de 8 caracteres directamente en WhatsApp.
+                      </p>
                     </div>
-
-                    <p className="text-[10px] text-slate-500 leading-tight border-t border-slate-800/80 pt-2">
-                      💡 <em>Si usas WhatsApp Web nativo (Baileys) mediante "Dispositivos vinculados", ejecuta <code>iniciar_sistema.bat</code> en tu terminal local.</em>
-                    </p>
                   </div>
                 </div>
               ) : (
@@ -483,7 +473,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                               setPairingCodeError(data.error || 'No se pudo generar el código.');
                             }
                           } catch (e: any) {
-                            setPairingCodeError('No se pudo conectar al servidor de WhatsApp. Asegúrate de ejecutar iniciar_sistema.bat para el motor Baileys.');
+                            setPairingCodeError('No se pudo conectar al servidor de WhatsApp. Por favor espera unos segundos e inténtalo de nuevo.');
                           } finally {
                             setIsRequestingPairingCode(false);
                           }

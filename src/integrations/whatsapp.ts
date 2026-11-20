@@ -29,6 +29,8 @@ let currentQR: string | null = null;
 let sock: ReturnType<typeof makeWASocket> | null = null;
 let isConnected = false;
 let isStarting = false;
+let isPairingCodeActive = false;
+let pairingCodeTimer: NodeJS.Timeout | null = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -50,10 +52,22 @@ export function getWhatsAppUser(): string | null {
 
 export async function requestWhatsAppPairingCode(phoneNumber: string): Promise<string> {
   const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
-  if (!sock) {
-    throw new Error('El motor de WhatsApp todavía no está listo. Por favor espera unos segundos.');
+  if (!cleanPhone || cleanPhone.length < 8) {
+    throw new Error('Número de teléfono inválido. Incluye el código de país (ej: +573001234567)');
   }
-  return await sock.requestPairingCode(cleanPhone);
+  if (!sock) {
+    throw new Error('El motor de WhatsApp todavía no está listo. Por favor espera unos segundos e inténtalo de nuevo.');
+  }
+
+  isPairingCodeActive = true;
+  if (pairingCodeTimer) clearTimeout(pairingCodeTimer);
+  pairingCodeTimer = setTimeout(() => {
+    isPairingCodeActive = false;
+  }, 120_000); // 2 minutes window for typing the pairing code on mobile
+
+  const code = await sock.requestPairingCode(cleanPhone);
+  console.log(`[WhatsApp] Pairing code generated successfully: ${code} for ${cleanPhone} ✅`);
+  return code;
 }
 
 export async function startWhatsAppBot(db: DB, forceFresh = false) {
@@ -63,6 +77,11 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
   }
   if (isStarting) {
     console.log('[WhatsApp] Connection attempt already in progress...');
+    return;
+  }
+  // If there's an active socket already handling QR or pairing code, don't kill it unless forced
+  if (!forceFresh && sock && !isConnected) {
+    console.log('[WhatsApp] Socket already active and waiting for authentication/QR.');
     return;
   }
   isStarting = true;
@@ -80,7 +99,7 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
     console.warn('[WhatsApp] Supabase status warning:', err.message);
   }
 
-  // Pre-auth sanity check: If wa-session has corrupt or unregistered credentials, wipe it
+  // Session directory management
   try {
     if (!fs.existsSync(SESSION_PATH)) {
       fs.mkdirSync(SESSION_PATH, { recursive: true });
@@ -90,12 +109,9 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
     if (!shouldWipe && fs.existsSync(credsFile)) {
       try {
         const raw = fs.readFileSync(credsFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (parsed.registered === false || (!parsed.me && !parsed.account)) {
-          console.log('[WhatsApp] Detected unregistered/dead session in creds.json. Wiping for fresh QR...');
-          shouldWipe = true;
-        }
+        JSON.parse(raw); // Only test if JSON is valid
       } catch {
+        console.log('[WhatsApp] Corrupt creds.json found. Wiping for fresh session...');
         shouldWipe = true;
       }
     }
@@ -145,7 +161,9 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
           child: () => ({ info: () => {}, error: console.error, warn: console.warn, debug: () => {}, trace: () => {} }),
         } as any),
       },
-      browser: Browsers.macOS('Desktop'),
+      browser: Browsers.ubuntu('Chrome'),
+      printQRInTerminal: false,
+      markOnlineOnConnect: true,
       syncFullHistory: false,
       connectTimeoutMs: 60_000,
       defaultQueryTimeoutMs: 60_000,
@@ -180,6 +198,8 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
       isConnected = false;
       currentQR = null;
       isStarting = false;
+      isPairingCodeActive = false;
+      sock = null; // Clean reference so reconnect can create fresh socket
       const code = (lastDisconnect?.error as any)?.output?.statusCode;
       const isLoggedOut = code === DisconnectReason.loggedOut || code === 401 || code === 403;
       const shouldReconnect = !isLoggedOut && reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
@@ -216,6 +236,7 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
       isConnected = true;
       currentQR = null;
       isStarting = false;
+      isPairingCodeActive = false;
       reconnectAttempts = 0; // Reset counter on successful connection
       console.log('[WhatsApp] Connected ✅');
       const userPhone = sock?.user?.id?.split(':')[0] || '';

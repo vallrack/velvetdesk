@@ -548,11 +548,11 @@ async function startServer() {
     res.json({ success: true, channel: updated });
   });
 
-  // WhatsApp Logout (backward compatibility)
-  app.post('/api/channels/whatsapp/logout', async (_, res) => {
+  // WhatsApp Disconnect & Session Wipe (backward compatibility)
+  app.post(['/api/channels/whatsapp/disconnect', '/api/channels/whatsapp/logout'], async (_, res) => {
     const database = requireDb(res); if (!database) return;
     await disconnectWhatsApp(database);
-    res.json({ success: true });
+    res.json({ success: true, message: 'WhatsApp desconectado y sesión eliminada' });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
