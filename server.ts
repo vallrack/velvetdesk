@@ -410,7 +410,7 @@ async function startServer() {
 
   // WhatsApp Instant Pairing Route (for camera QR scan / direct web link)
   app.get('/api/channels/whatsapp/pair', async (req, res) => {
-    const phone = String(req.query.phone || '+1 (305) 555-0199');
+    const phone = String(req.query.phone || '');
     if (db) {
       try {
         await db.from('channels').update({
