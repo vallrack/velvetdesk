@@ -14,6 +14,7 @@ import {
   Plus,
   QrCode,
   LogIn,
+  Trash2,
 } from 'lucide-react';
 import { ChannelIntegration, PlatformId } from '../../types';
 import { PlatformBadge } from '../common/PlatformBadge';
@@ -196,13 +197,28 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                     <span>{ch.status === 'connected' ? 'Configurar Sesión' : 'Iniciar Sesión'}</span>
                   </button>
 
-                  <button
-                    onClick={() => handleRefresh(ch.id)}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-colors"
-                    title="Forzar resincronización"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-pink-400' : ''}`} />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {ch.status === 'connected' && onDisconnectChannel && (
+                      <button
+                        onClick={async () => {
+                          if (window.confirm(`¿Desvincular ${ch.name} y borrar sesión del servidor?`)) {
+                            await onDisconnectChannel(ch.id);
+                          }
+                        }}
+                        className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 hover:text-rose-200 cursor-pointer transition-colors border border-rose-800/40"
+                        title="Desvincular y borrar sesión"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleRefresh(ch.id)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition-colors"
+                      title="Forzar resincronización"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-pink-400' : ''}`} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

@@ -133,23 +133,8 @@ export async function fetchChannels(): Promise<ChannelIntegration[]> {
       }
     }
 
-    // Merge any locally connected channels so local connection is never overwritten by stale DB data
-    const finalChannels: ChannelIntegration[] = mapped.map((m) => {
-      const local = memoryChannels.find((lc) => lc.id === m.id);
-      if (local && local.status === 'connected' && m.status === 'disconnected') {
-        return {
-          ...m,
-          status: 'connected' as const,
-          credentialInfo: local.credentialInfo,
-          accountUsername: local.accountUsername,
-          lastSyncTime: 'En tiempo real',
-        };
-      }
-      return m;
-    });
-
-    saveStoredChannels(finalChannels);
-    return finalChannels;
+    saveStoredChannels(mapped);
+    return mapped;
   } catch (err) {
     console.warn('[API] Using fallback channels:', err);
     return memoryChannels;
@@ -205,6 +190,26 @@ export async function fetchWhatsAppQR(): Promise<{ status: string; qr: string | 
 }
 
 export async function disconnectChannel(channelId: PlatformId): Promise<{ success: boolean; channel?: any }> {
+  // Clear from local memory and localStorage immediately
+  const updated = memoryChannels.map((c) =>
+    c.id === channelId
+      ? {
+          ...c,
+          status: 'disconnected' as const,
+          credentialInfo: 'No conectado',
+          accountUsername: '',
+          apiKeyOrToken: undefined,
+          sessionCookie: undefined,
+          lastSyncTime: 'Desconectado',
+        }
+      : c
+  );
+  saveStoredChannels(updated);
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('velvetdesk_wa_connected');
+  }
+
   try {
     return await apiFetch(`/channels/${channelId}/disconnect`, { method: 'POST' });
   } catch {

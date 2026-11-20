@@ -90,12 +90,14 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
     let timer: any;
     let fetchTimer: any;
 
-    const triggerConnected = () => {
+    const triggerConnected = (detectedUser?: string) => {
+      const realPhone = detectedUser || waPhone || '';
+      const displayPhone = realPhone ? (realPhone.startsWith('+') ? realPhone : `+${realPhone}`) : 'WhatsApp Conectado';
       setQrDataUrl(null);
       setVerifiedSuccess(true);
       onSaveCredentials('whatsapp', {
-        credentialInfo: waPhone || '+1 (305) 555-0199',
-        accountUsername: waPhone || '+1 (305) 555-0199',
+        credentialInfo: displayPhone,
+        accountUsername: realPhone,
         status: 'connected',
       });
       setTimeout(() => {
@@ -106,7 +108,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
 
     const handleMessage = (e: MessageEvent) => {
       if (e.data?.type === 'VELVETDESK_WA_CONNECTED') {
-        triggerConnected();
+        triggerConnected(e.data?.username);
       }
     };
 
@@ -121,30 +123,18 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
     window.addEventListener('storage', handleStorage);
 
     if (isOpen && activePlatform === 'whatsapp') {
-      // Check if already connected in localStorage
-      if (typeof localStorage !== 'undefined' && localStorage.getItem('velvetdesk_wa_connected') === 'true') {
-        localStorage.removeItem('velvetdesk_wa_connected');
-        triggerConnected();
-      }
-
       timer = setInterval(() => {
         setQrCounter((prev) => (prev > 1 ? prev - 1 : 60));
       }, 1000);
       
       const fetchQR = async () => {
         try {
-          if (typeof localStorage !== 'undefined' && localStorage.getItem('velvetdesk_wa_connected') === 'true') {
-            localStorage.removeItem('velvetdesk_wa_connected');
-            triggerConnected();
-            return;
-          }
-
           const res = await fetch('/api/channels/whatsapp/qr');
           const data = await res.json();
 
           // ── Instant connection auto-detection! ──
           if (data.status === 'connected') {
-            triggerConnected();
+            triggerConnected(data.username);
             return;
           }
 
@@ -176,7 +166,11 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
     setIsVerifying(true);
     let credInfo = '';
     if (activePlatform === 'whatsapp') {
-      credInfo = waPhone || '+1 (305) 555-0199';
+      credInfo = waPhone ? (waPhone.startsWith('+') ? waPhone : `+${waPhone}`) : '';
+      if (!credInfo) {
+        setIsVerifying(false);
+        return;
+      }
     } else if (activePlatform === 'telegram') {
       credInfo = usernameOrEmail || (apiToken ? `Bot: ${apiToken.substring(0, 10)}...` : '@VelvetGoddess_bot');
     } else if (activePlatform === 'onlyfans') {
@@ -189,7 +183,7 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
 
     onSaveCredentials(activePlatform, {
       credentialInfo: credInfo,
-      accountUsername: activePlatform === 'whatsapp' ? (waPhone || '+1 (305) 555-0199') : (usernameOrEmail || '@velvet_creator'),
+      accountUsername: activePlatform === 'whatsapp' ? (waPhone || '') : (usernameOrEmail || '@velvet_creator'),
       status: 'connected',
       apiKeyOrToken: apiToken || undefined,
       sessionCookie: sessionCookie || (activePlatform === 'manyvids' || activePlatform === 'pornhub' || activePlatform === 'onlyfans' ? password : undefined),
@@ -213,14 +207,15 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
     try {
       if (onDisconnectChannel) {
         await onDisconnectChannel(activePlatform);
-      } else {
-        await fetch(`/api/channels/${activePlatform}/disconnect`, { method: 'POST' });
-        onSaveCredentials(activePlatform, {
-          credentialInfo: 'No conectado',
-          accountUsername: '',
-          status: 'disconnected',
-        });
       }
+      try {
+        await fetch(`/api/channels/${activePlatform}/disconnect`, { method: 'POST' });
+      } catch {}
+      onSaveCredentials(activePlatform, {
+        credentialInfo: 'No conectado',
+        accountUsername: '',
+        status: 'disconnected',
+      });
       setQrDataUrl(null);
       setVerifiedSuccess(false);
       onClose();
@@ -369,32 +364,12 @@ export const ChannelAuthModal: React.FC<ChannelAuthModalProps> = ({
                         </div>
                       )}
 
-                      {/* Manual trigger overlay in case QR isn't working */}
-                      <div className="absolute inset-0 bg-slate-950/85 rounded-2xl flex flex-col items-center justify-center opacity-0 hover:opacity-100 transition-opacity p-2 text-center">
-                        <button
-                          type="button"
-                          onClick={handleTestAndConnect}
-                          className="px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs cursor-pointer shadow-lg transition-transform active:scale-95"
-                        >
-                          ⚡ Conectar al Instante
-                        </button>
-                      </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-400 font-mono">
                       <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" />
                       <span>Código activo ({qrCounter}s)</span>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={handleTestAndConnect}
-                      disabled={isVerifying}
-                      className="mt-3 w-full py-2.5 px-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-slate-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
-                    >
-                      <CheckCircle2 className="w-4 h-4 text-slate-950" />
-                      <span>⚡ Vincular WhatsApp Ahora (1 Clic)</span>
-                    </button>
                   </div>
 
                   {/* Instructions */}
