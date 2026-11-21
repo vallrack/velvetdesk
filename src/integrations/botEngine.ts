@@ -47,6 +47,7 @@ export interface BotReplyParams {
   rules: Array<{ id: string; name: string; enabled: boolean; triggers: string[]; actionType: string; replyContent: string; targetPpvId?: string | null }>;
   messages: Array<{ sender: string; text: string }>;
   vaultMenu: Array<{ id: string; title: string; type: string; price: number }>;
+  gateways?: Array<{ name: string; type: string; currency?: string; wallet_or_account?: string; instructions?: string }>;
 }
 
 export interface BotReplyResult {
@@ -139,10 +140,15 @@ Instrucciones personalizadas: ${params.persona?.customSystemPrompt || 'Mantén r
 Catálogo PPV disponible:
 ${JSON.stringify(params.vaultMenu || [], null, 2)}
 
+Métodos de pago habilitados de la creadora:
+${params.gateways && params.gateways.length > 0
+  ? JSON.stringify(params.gateways, null, 2)
+  : 'Acepta PayPal, Crypto USDT (TRC20), Wise o transferencia directa (pídele al fan que confirme su medio favorito).'}
+
 Reglas de negocio:
 1. Responde de forma muy natural, en primera persona, breve (1 a 3 oraciones).
 2. Si detectas interés en fotos/videos/packs, menciona sutilmente uno del catálogo con precio.
-3. Si la plataforma es WhatsApp o Telegram, menciona pago por PayPal, Wise, Crypto o transferencia.
+3. Si el fan pide cómo pagar en WhatsApp o Telegram, proporciona exactamente las billeteras, correos o instrucciones de los métodos de pago habilitados arriba.
 4. Si la plataforma es Fansly o ManyVids, menciona que se desbloquea directamente en el chat.
 5. Devuelve ÚNICAMENTE un JSON con:
 { "reply": "texto", "suggestedPpvId": "id o null", "intent": "INQUIRY|BUY_PPV|CASUAL|CUSTOM_REQUEST|FAQ", "isVoice": boolean }
@@ -341,7 +347,11 @@ function buildFallbackReply(params: BotReplyParams): string {
       : `Tengo contenido muy hot esperándote ${fanName} 🔥 Dime qué tipo y te lo consigo 💕`;
   }
 
-  if (lastMsg.includes('dinero') || lastMsg.includes('envié') || lastMsg.includes('pague') || lastMsg.includes('pagué') || lastMsg.includes('transferencia') || lastMsg.includes('pago')) {
+  if (lastMsg.includes('dinero') || lastMsg.includes('envié') || lastMsg.includes('pague') || lastMsg.includes('pagué') || lastMsg.includes('transferencia') || lastMsg.includes('pago') || lastMsg.includes('pagar') || lastMsg.includes('cuenta') || lastMsg.includes('paypal') || lastMsg.includes('crypto') || lastMsg.includes('usdt')) {
+    if (params.gateways && params.gateways.length > 0) {
+      const gList = params.gateways.map((g) => `• ${g.name}: ${g.wallet_or_account || ''} ${g.instructions ? `(${g.instructions})` : ''}`).join('\n');
+      return `¡Claro mi amor! 💕 Aquí tienes mis métodos de pago disponibles:\n\n${gList}\n\nEn cuanto realices el pago mándame el comprobante y te libero el contenido de inmediato 🔥`;
+    }
     return `Gracias ${fanName} ❤️ Déjame verificar tu pago y de inmediato te envío tu contenido. ¡Un momento! 🙏`;
   }
 

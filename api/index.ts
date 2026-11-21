@@ -607,30 +607,51 @@ app.post(['/api/threads/:id/messages', '/threads/:id/messages'], async (req: Req
     });
     if (error) console.warn('[Supabase] Insert message warning:', error.message);
 
-    // If message is sent by creator to Telegram, dispatch via Telegram Bot API
+    // Update thread in Supabase: last message & human takeover if creator sends
+    await db.from('threads').update({
+      last_message: msg.text || '',
+      last_message_time: msg.timestamp,
+      updated_at: new Date().toISOString(),
+      ...(msg.sender === 'creator' ? { attended_by: 'creator', bot_paused_reason: 'Intervención manual de la creadora', unread_count: 0 } : {}),
+    }).eq('id', req.params.id);
+
+    // Outbound Dispatch to external channels (WhatsApp / Telegram)
     if (msg.sender === 'creator') {
       try {
         const { data: thread } = await db.from('threads').select('*').eq('id', req.params.id).single();
-        if (thread && thread.platform === 'telegram') {
-          const { data: tgChannel } = await db.from('channels').select('api_key_or_token').eq('id', 'telegram').single();
-          if (tgChannel?.api_key_or_token) {
-            let tgChatTarget: string = thread.fan_handle;
-            const { data: fanData } = await db.from('fans').select('phone_or_username').eq('id', thread.fan_id).single();
-            if (fanData?.phone_or_username) {
-              tgChatTarget = fanData.phone_or_username;
-            }
-            const plainTgToken = decryptSecret(tgChannel.api_key_or_token);
-            if (tgChatTarget && plainTgToken) {
-              await fetch(`https://api.telegram.org/bot${plainTgToken}/sendMessage`, {
+        if (thread) {
+          if (thread.platform === 'whatsapp' && WHATSAPP_DAEMON_URL) {
+            const rawPhone = (thread.fan_handle || thread.id || '').replace(/[^0-9]/g, '');
+            if (rawPhone) {
+              const jid = `${rawPhone}@s.whatsapp.net`;
+              fetch(`${WHATSAPP_DAEMON_URL}/api/channels/whatsapp/send`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: tgChatTarget, text: msg.text || '' }),
-              }).catch(console.warn);
+                body: JSON.stringify({ jid, text: msg.text || '', media: msg.media || null }),
+                signal: AbortSignal.timeout(10000),
+              }).catch((err) => console.warn('[Vercel WhatsApp Outbound Error]:', err.message));
+            }
+          } else if (thread.platform === 'telegram') {
+            const { data: tgChannel } = await db.from('channels').select('api_key_or_token').eq('id', 'telegram').single();
+            if (tgChannel?.api_key_or_token) {
+              let tgChatTarget: string = thread.fan_handle;
+              const { data: fanData } = await db.from('fans').select('phone_or_username').eq('id', thread.fan_id).single();
+              if (fanData?.phone_or_username) {
+                tgChatTarget = fanData.phone_or_username;
+              }
+              const plainTgToken = decryptSecret(tgChannel.api_key_or_token);
+              if (tgChatTarget && plainTgToken) {
+                await fetch(`https://api.telegram.org/bot${plainTgToken}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ chat_id: tgChatTarget, text: msg.text || '' }),
+                }).catch(console.warn);
+              }
             }
           }
         }
       } catch (dispErr) {
-        console.warn('[Dispatch Outbound Telegram Warning]:', dispErr);
+        console.warn('[Dispatch Outbound Warning]:', dispErr);
       }
     }
   }

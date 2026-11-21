@@ -505,6 +505,19 @@ async function startServer() {
     }
   });
 
+  // WhatsApp Outbound Message Dispatch (for external callers like Vercel or manual chat UI)
+  app.post('/api/channels/whatsapp/send', async (req, res) => {
+    const { jid, text, media } = req.body;
+    if (!jid) return res.status(400).json({ error: 'JID o número de WhatsApp requerido' });
+    try {
+      const ok = await sendWhatsAppMessage(jid, { text, media });
+      return res.json({ success: ok });
+    } catch (err: any) {
+      console.error('[WhatsApp Outbound Send Error]:', err.message);
+      return res.status(500).json({ error: err.message || 'Error enviando mensaje de WhatsApp' });
+    }
+  });
+
   // Universal Channel Disconnect & Security Session Wipe
   app.post('/api/channels/:id/disconnect', async (req, res) => {
     const database = requireDb(res); if (!database) return;

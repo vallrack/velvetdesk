@@ -95,7 +95,8 @@ export async function startTelegramBot(token: string, db: DB) {
         const { data: persona } = await db.from('bot_persona').select('*').eq('id', 1).single();
         const { data: rules } = await db.from('bot_rules').select('*').eq('enabled', true);
         const { data: vault } = await db.from('vault_items').select('*');
-        const { data: messages } = await db.from('messages').select('*').eq('chat_id', threadId).order('created_at', { ascending: true }).limit(10);
+        const { data: gateways } = await db.from('payment_gateways').select('name, type, currency, wallet_or_account, instructions').eq('enabled', true);
+        const { data: messages } = await db.from('messages').select('*').eq('chat_id', threadId).order('created_at', { ascending: true }).limit(20);
 
         const delay = ((persona?.human_typing_delay_seconds || 2) * 1000);
 
@@ -113,6 +114,10 @@ export async function startTelegramBot(token: string, db: DB) {
               })),
               messages: (messages || []).map((m: any) => ({ sender: m.sender, text: m.text })),
               vaultMenu: (vault || []).map((v: any) => ({ id: v.id, title: v.title, type: v.type, price: v.price })),
+              gateways: (gateways || []).map((g: any) => ({
+                name: g.name, type: g.type, currency: g.currency,
+                wallet_or_account: g.wallet_or_account, instructions: g.instructions,
+              })),
             });
 
             if (!reply) return;

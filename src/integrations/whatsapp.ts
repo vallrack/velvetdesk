@@ -330,6 +330,7 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
           const { data: persona } = await db.from('bot_persona').select('*').eq('id', 1).single();
           const { data: rules } = await db.from('bot_rules').select('*').eq('enabled', true);
           const { data: vault } = await db.from('vault_items').select('id, title, type, price');
+          const { data: gateways } = await db.from('payment_gateways').select('name, type, currency, wallet_or_account, instructions').eq('enabled', true);
           // Fetch ALL messages AFTER saving the fan's message so context includes it
           const { data: msgs } = await db.from('messages').select('sender, text').eq('chat_id', threadId).order('created_at', { ascending: true }).limit(20);
 
@@ -349,6 +350,10 @@ export async function startWhatsAppBot(db: DB, forceFresh = false) {
                 })),
                 messages: (msgs || []).map((m: any) => ({ sender: m.sender, text: m.text })),
                 vaultMenu: (vault || []).map((v: any) => ({ id: v.id, title: v.title, type: v.type, price: v.price })),
+                gateways: (gateways || []).map((g: any) => ({
+                  name: g.name, type: g.type, currency: g.currency,
+                  wallet_or_account: g.wallet_or_account, instructions: g.instructions,
+                })),
               });
 
               if (!reply || !sock) return;
